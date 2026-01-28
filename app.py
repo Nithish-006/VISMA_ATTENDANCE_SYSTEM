@@ -81,6 +81,31 @@ def create_app(config_name=None):
     def health_check():
         return {'status': 'healthy'}
 
+    # Manual database init endpoint (one-time use)
+    @app.route('/api/init-db', methods=['POST'])
+    def init_db_endpoint():
+        from models import Salary, Attendance
+
+        # Check if already has data
+        if Salary.query.first() is not None:
+            return {'status': 'skipped', 'message': 'Data already exists'}, 200
+
+        try:
+            # Check for Excel files
+            if not os.path.exists('Attendance.xlsx') or not os.path.exists('Salary.xlsx'):
+                return {'status': 'error', 'message': 'Excel files not found'}, 404
+
+            from import_data import import_from_excel
+            success = import_from_excel()
+
+            if success:
+                count = Salary.query.count()
+                return {'status': 'success', 'message': f'Imported {count} workers'}, 200
+            else:
+                return {'status': 'error', 'message': 'Import failed'}, 500
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}, 500
+
     return app
 
 
