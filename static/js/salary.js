@@ -36,6 +36,9 @@ async function loadMonthlySalaries() {
         // Render monthly sections
         container.innerHTML = salaryData.map(month => renderMonthSection(month)).join('');
 
+        // Attach click listeners to worker rows
+        attachWorkerRowListeners();
+
         // Show base salary prompt if needed
         if (pendingBaseSalaryWorkers.length > 0) {
             promptForBaseSalary();
@@ -82,7 +85,11 @@ function renderMonthSection(month) {
                                 </thead>
                                 <tbody>
                                     ${workers.map(w => `
-                                        <tr class="${!w.base_salary_per_day ? 'needs-salary' : ''}">
+                                        <tr class="worker-row ${!w.base_salary_per_day ? 'needs-salary' : ''}"
+                                            data-worker-id="${w.worker_id}"
+                                            data-year="${month.year}"
+                                            data-month="${month.month_num}"
+                                            data-worker-name="${w.name}">
                                             <td class="worker-name">${w.name}</td>
                                             <td>${w.designation || '-'}</td>
                                             <td class="right">${w.base_salary_per_day ? formatCurrency(w.base_salary_per_day) : '<span class="warning">Not set</span>'}</td>
@@ -232,3 +239,117 @@ async function saveBaseSalary(e) {
         console.error(error);
     }
 }
+
+function attachWorkerRowListeners() {
+    document.querySelectorAll('.worker-row').forEach(row => {
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', function() {
+            const workerId = parseInt(this.dataset.workerId);
+            const year = parseInt(this.dataset.year);
+            const month = parseInt(this.dataset.month);
+            const workerName = this.dataset.workerName;
+            showAttendanceHistory(workerId, year, month, workerName);
+        });
+    });
+}
+
+async function showAttendanceHistory(workerId, year, month, workerName) {
+    const modal = document.getElementById('historyModal');
+    const title = document.getElementById('historyModalTitle');
+    const body = document.getElementById('historyModalBody');
+
+    modal.style.display = 'flex';
+    title.textContent = `${workerName} - ${getMonthName(year, month)}`;
+    body.innerHTML = '<div class="loading">Loading attendance history...</div>';
+
+    try {
+        const response = await fetch(`/api/labours/${workerId}/history`);
+        const data = await response.json();
+
+        // Filter attendance records for the specific month
+        const monthRecords = data.attendance.filter(a => {
+            const date = new Date(a.date);
+            return date.getFullYear() === year && (date.getMonth() + 1) === month;
+        });
+
+        // Sort by date ascending
+        monthRecords.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // Calculate stats
+        let presentDays = 0, absentDays = 0, holidays = 0, totalOT = 0;
+        monthRecords.forEach(a => {
+            if (a.status === 'P') presentDays++;
+            else if (a.status === 'A') absentDays++;
+            else if (a.status === 'H') holidays++;
+            totalOT += parseFloat(a.ot_hours) || 0;
+        });
+
+        if (monthRecords.length === 0) {
+            body.innerHTML = `
+                <div class="worker-info-bar">
+                    <span class="info-chip"><strong>ID:</strong> ${data.worker_id}</span>
+                    <span class="info-chip"><strong>Designation:</strong> ${data.designation || 'N/A'}</span>
+                    <span class="info-chip"><strong>Team:</strong> ${data.team || 'N/A'}</span>
+                </div>
+                <div class="empty-state">No attendance records for this month.</div>
+            `;
+            return;
+        }
+
+        body.innerHTML = `
+            <div class="worker-info-bar">
+                <span class="info-chip"><strong>ID:</strong> ${data.worker_id}</span>
+                <span class="info-chip"><strong>Designation:</strong> ${data.designation || 'N/A'}</span>
+                <span class="info-chip"><strong>Team:</strong> ${data.team || 'N/A'}</span>
+            </div>
+
+            <div class="history-months">
+                <div class="history-month-section">
+                    <div class="history-month-header">
+                        <h3 class="history-month-title">${getMonthName(year, month)}</h3>
+                        <div class="month-stats">
+                            <span class="stat present">${presentDays}P</span>
+                            <span class="stat absent">${absentDays}A</span>
+                            <span class="stat holiday">${holidays}H</span>
+                            <span class="stat ot">${totalOT} OT</span>
+                        </div>
+                    </div>
+                    <div class="calendar-grid">
+                        ${monthRecords.map(a => {
+                            const day = new Date(a.date).getDate();
+                            return `
+                                <div class="day-cell ${a.status.toLowerCase()}" title="${a.date}${a.project ? ' - ' + a.project : ''}">
+                                    <span class="day-num">${day}</span>
+                                    <span class="day-status">${a.status}</span>
+                                    ${a.ot_hours > 0 ? `<span class="day-ot">+${a.ot_hours}</span>` : ''}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+
+    } catch (error) {
+        body.innerHTML = '<div class="error">Error loading attendance history.</div>';
+        console.error(error);
+    }
+}
+
+function getMonthName(year, month) {
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+    return `${months[month - 1]} ${year}`;
+}
+
+function closeHistoryModal() {
+    document.getElementById('historyModal').style.display = 'none';
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', function(e) {
+    const modal = document.getElementById('historyModal');
+    if (e.target === modal) {
+        closeHistoryModal();
+    }
+});

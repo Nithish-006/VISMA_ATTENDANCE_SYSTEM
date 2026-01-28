@@ -33,22 +33,15 @@
     </main>
 </div>
 
-<!-- Base Salary Modal -->
-<div id="salaryModal" class="modal" style="display: none;">
-    <div class="modal-content modal-small">
+<!-- Attendance History Modal -->
+<div id="historyModal" class="modal" style="display: none;">
+    <div class="modal-content">
         <div class="modal-header">
-            <h2 id="salaryModalTitle">Set Base Salary</h2>
-            <button class="close-btn" onclick="closeSalaryModal()">&times;</button>
+            <h2 id="historyModalTitle">Attendance History</h2>
+            <button class="close-btn" onclick="closeHistoryModal()">&times;</button>
         </div>
-        <div class="modal-body">
-            <form id="salaryForm">
-                <input type="hidden" id="salaryWorkerId">
-                <div class="form-group">
-                    <label>Base Salary per Day</label>
-                    <input type="number" id="baseSalaryInput" min="0" step="50" required placeholder="Enter daily rate">
-                </div>
-                <button type="submit" class="submit-btn">Save Salary</button>
-            </form>
+        <div id="historyModalBody" class="modal-body">
+            <div class="loading">Loading...</div>
         </div>
     </div>
 </div>

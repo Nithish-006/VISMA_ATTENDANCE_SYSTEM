@@ -62,6 +62,8 @@ def get_monthly_salaries():
         year, month = month_key.split('-')
         result.append({
             'month': month_key,
+            'year': int(year),
+            'month_num': int(month),
             'month_name': f"{calendar.month_name[int(month)]} {year}",
             'workers': months_data[month_key]['workers'],
             'total_salary': float(months_data[month_key]['total_salary'])

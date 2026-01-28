@@ -1515,6 +1515,19 @@ tr:hover td {
     background: var(--warning-bg);
 }
 
+.workers-table tr.worker-row {
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.workers-table tr.worker-row:hover td {
+    background: var(--bg-tertiary);
+}
+
+.workers-table tr.worker-row:not(.needs-salary):hover td {
+    background: rgba(99, 102, 241, 0.08);
+}
+
 .warning {
     color: var(--warning);
     font-size: 0.8125rem;
