@@ -291,3 +291,43 @@ def get_projects():
     """Get list of unique projects."""
     projects = db.session.query(Attendance.project).distinct().filter(Attendance.project.isnot(None)).all()
     return jsonify([p[0] for p in projects if p[0]])
+
+
+@attendance_bp.route('/api/attendance/export', methods=['GET'])
+def export_attendance():
+    """Get all attendance records for export."""
+    # Get all attendance records with worker info
+    records = db.session.query(
+        Attendance,
+        Salary.name,
+        Salary.designation,
+        Salary.team
+    ).join(
+        Salary,
+        (Attendance.worker_id == Salary.worker_id)
+    ).distinct(
+        Attendance.id
+    ).order_by(
+        Attendance.date.desc(),
+        Salary.team,
+        Salary.name
+    ).all()
+
+    # Remove duplicates (keep first occurrence per attendance record)
+    seen = set()
+    result = []
+    for att, name, designation, team in records:
+        if att.id not in seen:
+            seen.add(att.id)
+            result.append({
+                'date': att.date.isoformat(),
+                'worker_id': att.worker_id,
+                'name': name,
+                'designation': designation,
+                'team': team,
+                'status': att.status,
+                'ot_hours': float(att.ot_hours) if att.ot_hours else 0,
+                'project': att.project or ''
+            })
+
+    return jsonify(result)

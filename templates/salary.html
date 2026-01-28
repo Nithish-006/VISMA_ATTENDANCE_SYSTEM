@@ -20,7 +20,7 @@
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
-                    Export CSV
+                    Export Excel
                 </button>
             </div>
         </div>
@@ -48,5 +48,7 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- SheetJS for Excel export -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script src="{{ url_for('static', filename='js/salary.js') }}"></script>
 {% endblock %}

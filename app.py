@@ -68,10 +68,6 @@ def create_app(config_name=None):
     def attendance_page():
         return render_template('attendance.html')
 
-    @app.route('/attendance/mark')
-    def mark_attendance_page():
-        return render_template('mark_attendance.html')
-
     @app.route('/salary')
     def salary_page():
         return render_template('salary.html')

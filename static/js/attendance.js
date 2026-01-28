@@ -4,6 +4,8 @@ let attendanceData = {};
 let workerTeams = {};  // Track team changes per worker
 let projectsList = [];
 let teamsList = [];
+let markedWorkers = new Set();  // Track which workers have been marked
+let totalWorkers = 0;
 
 document.addEventListener('DOMContentLoaded', async function() {
     const dateInput = document.getElementById('dateInput');
@@ -48,14 +50,21 @@ async function loadAttendance() {
     container.innerHTML = '<div class="loading">Loading labours...</div>';
     hideMessage();
 
+    // Reset tracking
+    markedWorkers = new Set();
+    totalWorkers = 0;
+
     try {
         const response = await fetch(`/api/attendance/date/${date}`);
         const workers = await response.json();
 
         if (workers.length === 0) {
             container.innerHTML = '<div class="empty-state">No labours found. Add labours or import data first.</div>';
+            updateProgressCounter();
             return;
         }
+
+        totalWorkers = workers.length;
 
         // Group by team and track worker data
         const teams = {};
@@ -64,6 +73,7 @@ async function loadAttendance() {
             if (!teams[team]) teams[team] = [];
             teams[team].push(worker);
 
+            // Default to 'A' (absent) - user must explicitly mark each worker
             attendanceData[worker.worker_id] = {
                 worker_id: worker.worker_id,
                 date: date,
@@ -71,6 +81,9 @@ async function loadAttendance() {
                 ot_hours: worker.attendance?.ot_hours || 0,
                 project: worker.attendance?.project || ''
             };
+
+            // All workers start as unmarked - user must click to mark
+            // markedWorkers stays empty initially
 
             // Track current team for each worker
             workerTeams[worker.worker_id] = worker.team || '';
@@ -90,6 +103,7 @@ async function loadAttendance() {
 
         container.innerHTML = html;
         attachCardListeners();
+        updateProgressCounter();
 
     } catch (error) {
         container.innerHTML = '<div class="error">Error loading data. Is the server running?</div>';
@@ -100,23 +114,25 @@ async function loadAttendance() {
 function renderWorkerCard(worker) {
     const att = attendanceData[worker.worker_id];
     const currentTeam = worker.team || '';
+    const isMarked = markedWorkers.has(worker.worker_id);
 
     // Build team options
     const teamOptions = teamsList.map(t =>
         `<option value="${t}" ${t === currentTeam ? 'selected' : ''}>${t}</option>`
     ).join('');
 
+    // Cards start normal, turn green with tick when marked
     return `
-        <div class="worker-card" data-worker-id="${worker.worker_id}">
+        <div class="worker-card ${isMarked ? 'marked' : ''}" data-worker-id="${worker.worker_id}">
             <div class="worker-header">
                 <div>
                     <h3 class="worker-name">${worker.name}</h3>
                     <p class="worker-designation">${worker.designation || ''}</p>
                 </div>
                 <div class="status-buttons">
-                    <button class="status-btn P ${att.status === 'P' ? 'active' : ''}" data-status="P">P</button>
-                    <button class="status-btn A ${att.status === 'A' ? 'active' : ''}" data-status="A">A</button>
-                    <button class="status-btn H ${att.status === 'H' ? 'active' : ''}" data-status="H">H</button>
+                    <button class="status-btn P" data-status="P">P</button>
+                    <button class="status-btn A" data-status="A">A</button>
+                    <button class="status-btn H" data-status="H">H</button>
                 </div>
             </div>
             <div class="worker-controls">
@@ -158,6 +174,13 @@ function attachCardListeners() {
             this.classList.add('active');
 
             attendanceData[workerId].status = status;
+
+            // Mark this worker as done
+            if (!markedWorkers.has(workerId)) {
+                markedWorkers.add(workerId);
+                markCardAsComplete(card);
+                updateProgressCounter();
+            }
         });
     });
 
@@ -256,6 +279,11 @@ async function saveAllAttendance() {
 
         showMessage('Attendance saved successfully!', 'success');
 
+        // Reset summary cache so it reloads fresh data
+        if (typeof summaryLoaded !== 'undefined') {
+            window.summaryLoaded = false;
+        }
+
         // Reload projects and teams list in case new ones were added
         await loadProjectsAndTeams();
 
@@ -334,4 +362,37 @@ function showMessage(text, type) {
 function hideMessage() {
     const msg = document.getElementById('message');
     if (msg) msg.style.display = 'none';
+}
+
+function markCardAsComplete(card) {
+    card.classList.add('marked');
+
+    // Add the green tick at bottom right if not already present
+    if (!card.querySelector('.marked-indicator')) {
+        const indicator = document.createElement('div');
+        indicator.className = 'marked-indicator';
+        indicator.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
+        card.appendChild(indicator);
+    }
+}
+
+function updateProgressCounter() {
+    const counter = document.getElementById('progressCounter');
+    if (counter) {
+        const marked = markedWorkers.size;
+
+        if (totalWorkers === 0) {
+            counter.textContent = '';
+            counter.className = 'progress-counter';
+        } else if (marked === 0) {
+            counter.textContent = `0 of ${totalWorkers} marked`;
+            counter.className = 'progress-counter pending';
+        } else if (marked === totalWorkers) {
+            counter.textContent = `${marked} of ${totalWorkers} marked`;
+            counter.className = 'progress-counter complete';
+        } else {
+            counter.textContent = `${marked} of ${totalWorkers} marked`;
+            counter.className = 'progress-counter pending';
+        }
+    }
 }

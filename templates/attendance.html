@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Labours - Visma{% endblock %}
+{% block title %}Attendance - Visma{% endblock %}
 
 {% block content %}
 <div class="page-container">
@@ -12,24 +12,101 @@
                 </svg>
                 Back
             </a>
-            <h1 class="page-title">All Labours</h1>
+            <h1 class="page-title">Attendance</h1>
             <div class="header-controls">
-                <a href="{{ url_for('mark_attendance_page') }}" class="btn btn-primary">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <line x1="12" y1="5" x2="12" y2="19"/>
-                        <line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
-                    Mark Attendance
-                </a>
+                <!-- Tab Switcher -->
+                <div class="tab-switcher">
+                    <button id="tabMark" class="tab-btn active" onclick="showPanel('mark')">Mark Attendance</button>
+                    <button id="tabSummary" class="tab-btn" onclick="showPanel('summary')">View Summary</button>
+                </div>
+                <!-- Mark Attendance Controls -->
+                <div id="markControls" class="control-group">
+                    <span id="progressCounter" class="progress-counter"></span>
+                    <input type="date" id="dateInput" class="date-input">
+                    <button id="addLabourBtn" class="btn btn-secondary">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="8.5" cy="7" r="4"/>
+                            <line x1="20" y1="8" x2="20" y2="14"/>
+                            <line x1="23" y1="11" x2="17" y2="11"/>
+                        </svg>
+                        Add Labour
+                    </button>
+                    <button id="saveBtn" class="btn btn-primary">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                            <polyline points="17 21 17 13 7 13 7 21"/>
+                            <polyline points="7 3 7 8 15 8"/>
+                        </svg>
+                        Save All
+                    </button>
+                </div>
             </div>
         </div>
     </header>
 
-    <main class="main-content">
-        <div id="laboursContainer" class="labours-list">
-            <div class="loading">Loading labours...</div>
+    <div id="message" class="message" style="display: none;"></div>
+
+    <!-- Sliding Panels Container -->
+    <div class="panels-wrapper">
+        <div id="panelsContainer" class="panels-container">
+            <!-- Panel 1: Mark Attendance -->
+            <div id="panelMark" class="panel active">
+                <main class="main-content">
+                    <div id="workersContainer" class="workers-container">
+                        <div class="loading">Loading labours...</div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- Panel 2: Summary -->
+            <div id="panelSummary" class="panel">
+                <main class="main-content">
+                    <div id="laboursContainer" class="labours-list">
+                        <div class="loading">Loading labours...</div>
+                    </div>
+                </main>
+            </div>
         </div>
-    </main>
+    </div>
+</div>
+
+<!-- Add Labour Modal -->
+<div id="addModal" class="modal" style="display: none;">
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <h2>Add New Labour</h2>
+            <button class="close-btn" onclick="closeAddModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="addLabourForm">
+                <div class="form-group">
+                    <label>Name *</label>
+                    <input type="text" id="newName" required placeholder="Enter worker name">
+                </div>
+                <div class="form-group">
+                    <label>Designation</label>
+                    <select id="newDesignation">
+                        <option value="">Select designation...</option>
+                        <option value="FITTER">FITTER</option>
+                        <option value="WELDER">WELDER</option>
+                        <option value="HELPER">HELPER</option>
+                        <option value="RIGGER">RIGGER</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Team</label>
+                    <input type="text" id="newTeam" list="teamsList" placeholder="Select or type new team">
+                    <datalist id="teamsList"></datalist>
+                </div>
+                <div class="form-group">
+                    <label>Base Salary/Day</label>
+                    <input type="number" id="newSalary" min="0" step="50" placeholder="Optional - set later">
+                </div>
+                <button type="submit" class="submit-btn">Add Labour</button>
+            </form>
+        </div>
+    </div>
 </div>
 
 <!-- Labour History Modal -->
@@ -37,7 +114,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2 id="modalTitle">Labour History</h2>
-            <button class="close-btn" onclick="closeModal()">&times;</button>
+            <button class="close-btn" onclick="closeHistoryModal()">&times;</button>
         </div>
         <div id="modalBody" class="modal-body">
             <div class="loading">Loading...</div>
@@ -47,9 +124,41 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/attendance.js') }}"></script>
 <script>
-document.addEventListener('DOMContentLoaded', loadLabours);
+// Panel switching
+let currentPanel = 'mark';
+window.summaryLoaded = false;
 
+function showPanel(panel) {
+    if (panel === currentPanel) return;
+
+    currentPanel = panel;
+    const container = document.getElementById('panelsContainer');
+    const tabMark = document.getElementById('tabMark');
+    const tabSummary = document.getElementById('tabSummary');
+    const markControls = document.getElementById('markControls');
+
+    if (panel === 'mark') {
+        container.style.transform = 'translateX(0)';
+        tabMark.classList.add('active');
+        tabSummary.classList.remove('active');
+        markControls.style.display = 'flex';
+    } else {
+        container.style.transform = 'translateX(-50%)';
+        tabMark.classList.remove('active');
+        tabSummary.classList.add('active');
+        markControls.style.display = 'none';
+
+        // Load summary if not loaded or needs refresh
+        if (!window.summaryLoaded) {
+            loadLabours();
+            window.summaryLoaded = true;
+        }
+    }
+}
+
+// Load labours for summary panel
 async function loadLabours() {
     const container = document.getElementById('laboursContainer');
 
@@ -100,6 +209,7 @@ async function loadLabours() {
     }
 }
 
+// Show worker history modal
 async function showHistory(workerId) {
     const modal = document.getElementById('historyModal');
     const title = document.getElementById('modalTitle');
@@ -134,10 +244,7 @@ async function showHistory(workerId) {
             monthlyData[monthKey].totalOT += parseFloat(a.ot_hours) || 0;
         });
 
-        // Sort months (newest first) and sort days within each month (ascending)
         const sortedMonths = Object.keys(monthlyData).sort().reverse();
-
-        // Sort records within each month by day (ascending)
         sortedMonths.forEach(monthKey => {
             monthlyData[monthKey].records.sort((a, b) => new Date(a.date) - new Date(b.date));
         });
@@ -196,12 +303,12 @@ function getMonthName(monthKey) {
     return `${months[parseInt(month) - 1]} ${year}`;
 }
 
-function closeModal() {
+function closeHistoryModal() {
     document.getElementById('historyModal').style.display = 'none';
 }
 
 document.getElementById('historyModal').addEventListener('click', function(e) {
-    if (e.target === this) closeModal();
+    if (e.target === this) closeHistoryModal();
 });
 </script>
 {% endblock %}

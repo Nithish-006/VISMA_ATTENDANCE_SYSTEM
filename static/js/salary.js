@@ -5,7 +5,7 @@ let pendingBaseSalaryWorkers = [];
 
 document.addEventListener('DOMContentLoaded', function() {
     loadMonthlySalaries();
-    document.getElementById('exportBtn').addEventListener('click', exportCSV);
+    document.getElementById('exportBtn').addEventListener('click', exportExcel);
 });
 
 async function loadMonthlySalaries() {
@@ -69,7 +69,9 @@ function renderMonthSection(month) {
                 ${Object.entries(teams).map(([team, workers]) => `
                     <div class="team-group">
                         <div class="team-label">${team}</div>
-                        <div class="workers-table">
+
+                        <!-- Desktop Table View -->
+                        <div class="workers-table desktop-only">
                             <table>
                                 <thead>
                                     <tr>
@@ -103,6 +105,47 @@ function renderMonthSection(month) {
                                 </tbody>
                             </table>
                         </div>
+
+                        <!-- Mobile Card View -->
+                        <div class="salary-cards mobile-only">
+                            ${workers.map(w => `
+                                <div class="salary-card worker-row ${!w.base_salary_per_day ? 'needs-salary' : ''}"
+                                    data-worker-id="${w.worker_id}"
+                                    data-year="${month.year}"
+                                    data-month="${month.month_num}"
+                                    data-worker-name="${w.name}">
+                                    <div class="salary-card-header">
+                                        <div class="salary-card-name">${w.name}</div>
+                                        <div class="salary-card-total">${formatCurrency(w.total_salary)}</div>
+                                    </div>
+                                    <div class="salary-card-designation">${w.designation || '-'}</div>
+                                    <div class="salary-card-details">
+                                        <div class="salary-card-item">
+                                            <span class="label">Base/Day</span>
+                                            <span class="value">${w.base_salary_per_day ? formatCurrency(w.base_salary_per_day) : '<span class="warning">Not set</span>'}</span>
+                                        </div>
+                                        <div class="salary-card-item">
+                                            <span class="label">Days</span>
+                                            <span class="value">${w.working_days}</span>
+                                        </div>
+                                        <div class="salary-card-item">
+                                            <span class="label">OT Hrs</span>
+                                            <span class="value">${w.ot_hours}</span>
+                                        </div>
+                                    </div>
+                                    <div class="salary-card-footer">
+                                        <div class="salary-card-item">
+                                            <span class="label">Base Pay</span>
+                                            <span class="value">${formatCurrency(w.base_pay)}</span>
+                                        </div>
+                                        <div class="salary-card-item">
+                                            <span class="label">OT Pay</span>
+                                            <span class="value">${formatCurrency(w.ot_pay)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
                 `).join('')}
             </div>
@@ -119,52 +162,181 @@ function formatCurrency(amount) {
     }).format(amount || 0);
 }
 
-function exportCSV() {
+async function exportExcel() {
     if (!salaryData || salaryData.length === 0) {
         alert('No data to export');
         return;
     }
 
-    const headers = ['Month', 'Name', 'Designation', 'Team', 'Base/Day', 'Working Days', 'OT Hours', 'Base Pay', 'OT Pay', 'Total Salary'];
-    const rows = [];
+    const btn = document.getElementById('exportBtn');
+    btn.disabled = true;
+    btn.innerHTML = `
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="spin">
+            <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32"/>
+        </svg>
+        Exporting...
+    `;
 
-    salaryData.forEach(month => {
-        month.workers.forEach(w => {
-            rows.push([
-                month.month_name,
-                w.name,
-                w.designation || '',
-                w.team || '',
-                w.base_salary_per_day,
-                w.working_days,
-                w.ot_hours,
-                w.base_pay,
-                w.ot_pay,
-                w.total_salary
-            ]);
-        });
-        // Add month total row
-        rows.push([
-            month.month_name,
-            'MONTH TOTAL',
-            '', '', '', '', '', '', '',
-            month.total_salary
-        ]);
-        rows.push([]); // Empty row between months
-    });
+    try {
+        // Fetch attendance data
+        const attendanceResponse = await fetch('/api/attendance/export');
+        const attendanceData = await attendanceResponse.json();
 
-    const csvContent = [
-        headers.join(','),
-        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
+        // Create workbook
+        const wb = XLSX.utils.book_new();
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `monthly_salary_report_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+        // Process each month separately
+        for (const month of salaryData) {
+            const monthAbbr = month.month_name.split(' ')[0].toUpperCase().substring(0, 3); // e.g., "JAN"
+            const year = month.year;
+            const yearShort = String(year).slice(-2); // e.g., "25"
+            const monthNum = month.month_num;
+            const sheetName = `${monthAbbr}-${yearShort}`; // e.g., "JAN-25"
+
+            // Get days in this month
+            const daysInMonth = new Date(year, monthNum, 0).getDate();
+
+            // Filter attendance for this month
+            const monthAttendance = attendanceData.filter(a => {
+                const d = new Date(a.date);
+                return d.getFullYear() === year && (d.getMonth() + 1) === monthNum;
+            });
+
+            // Build attendance map: worker_id -> day -> {status, ot, project}
+            const attendanceMap = {};
+            monthAttendance.forEach(a => {
+                const day = new Date(a.date).getDate();
+                if (!attendanceMap[a.worker_id]) {
+                    attendanceMap[a.worker_id] = {};
+                }
+                attendanceMap[a.worker_id][day] = {
+                    status: a.status,
+                    ot: a.ot_hours || '',
+                    project: a.project || ''
+                };
+            });
+
+            // Build header rows
+            const titleRow = [`LABOUR ATTENDANCE FOR ${sheetName}`];
+
+            // First header row: S.No, Name, DESIGNATION, TEAM, then day numbers
+            const headerRow1 = ['S. No', 'Name', 'DESIGNATION', 'TEAM'];
+            const headerRow2 = ['', '', '', '']; // Sub-headers for OT, Pr
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = new Date(year, monthNum - 1, day);
+                const dayName = date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                const isSunday = date.getDay() === 0;
+
+                if (isSunday) {
+                    headerRow1.push(`${day} SUNDAY`, '', '');
+                } else {
+                    headerRow1.push(day, '', '');
+                }
+                headerRow2.push('', 'OT', 'Pr');
+            }
+
+            // Add summary columns
+            headerRow1.push(`${sheetName} MONTH LABOUR ATTENDANCE & PAYMENT`, '', '', '', '', '');
+            headerRow2.push('TOTAL PRESENT', 'TOTAL OT', 'BASE SALARY', 'BASE PAY', 'OT PAY', 'TOTAL SALARY');
+
+            // Build data rows
+            const dataRows = [];
+            let sNo = 1;
+
+            // Group workers by team
+            const teams = {};
+            month.workers.forEach(w => {
+                const team = w.team || 'Unassigned';
+                if (!teams[team]) teams[team] = [];
+                teams[team].push(w);
+            });
+
+            for (const [team, workers] of Object.entries(teams)) {
+                workers.forEach(w => {
+                    const row = [sNo++, w.name, w.designation || '', w.team || ''];
+
+                    // Add daily attendance
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const att = attendanceMap[w.worker_id]?.[day];
+                        if (att) {
+                            row.push(att.status, att.ot || '', att.project || '');
+                        } else {
+                            row.push('', '', '');
+                        }
+                    }
+
+                    // Add summary columns
+                    row.push(
+                        w.working_days,             // TOTAL PRESENT
+                        w.ot_hours,                 // TOTAL OT
+                        w.base_salary_per_day || 0, // BASE SALARY (per day)
+                        w.base_pay || 0,            // BASE PAY
+                        w.ot_pay || 0,              // OT PAY
+                        w.total_salary              // TOTAL SALARY
+                    );
+
+                    dataRows.push(row);
+                });
+            }
+
+            // Combine all rows
+            const sheetData = [titleRow, headerRow1, headerRow2, ...dataRows];
+
+            // Create sheet
+            const sheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+            // Set column widths
+            const cols = [
+                { wch: 5 },   // S.No
+                { wch: 20 },  // Name
+                { wch: 12 },  // Designation
+                { wch: 10 }   // Team
+            ];
+
+            // Day columns (3 per day)
+            for (let day = 1; day <= daysInMonth; day++) {
+                cols.push({ wch: 3 }, { wch: 3 }, { wch: 8 }); // Status, OT, Project
+            }
+
+            // Summary columns
+            cols.push(
+                { wch: 13 }, // TOTAL PRESENT
+                { wch: 10 }, // TOTAL OT
+                { wch: 12 }, // BASE SALARY
+                { wch: 10 }, // BASE PAY
+                { wch: 10 }, // OT PAY
+                { wch: 12 }  // TOTAL SALARY
+            );
+
+            sheet['!cols'] = cols;
+
+            // Merge title cell
+            sheet['!merges'] = [
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } } // Merge title across first 4 columns
+            ];
+
+            XLSX.utils.book_append_sheet(wb, sheet, sheetName);
+        }
+
+        // Generate and download file
+        const fileName = `salary_report_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+
+    } catch (error) {
+        console.error('Export failed:', error);
+        alert('Failed to export. Please try again.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export Excel
+        `;
+    }
 }
 
 function promptForBaseSalary() {
