@@ -254,8 +254,9 @@ function updateTeamsDatalist() {
 
 async function saveAllAttendance() {
     const btn = document.getElementById('saveBtn');
+    const originalContent = btn.innerHTML;
     btn.disabled = true;
-    btn.textContent = 'Saving...';
+    btn.innerHTML = '<span class="saving-spinner"></span>';
     hideMessage();
 
     const date = document.getElementById('dateInput').value;
@@ -292,7 +293,7 @@ async function saveAllAttendance() {
         console.error(error);
     } finally {
         btn.disabled = false;
-        btn.textContent = 'Save All';
+        btn.innerHTML = originalContent;
     }
 }
 
@@ -381,17 +382,15 @@ function updateProgressCounter() {
     if (counter) {
         const marked = markedWorkers.size;
 
-        if (totalWorkers === 0) {
+        if (totalWorkers === 0 || marked === 0) {
+            // Hide counter until first mark is made
             counter.textContent = '';
             counter.className = 'progress-counter';
-        } else if (marked === 0) {
-            counter.textContent = `0 of ${totalWorkers} marked`;
-            counter.className = 'progress-counter pending';
         } else if (marked === totalWorkers) {
-            counter.textContent = `${marked} of ${totalWorkers} marked`;
+            counter.textContent = `${marked}/${totalWorkers}`;
             counter.className = 'progress-counter complete';
         } else {
-            counter.textContent = `${marked} of ${totalWorkers} marked`;
+            counter.textContent = `${marked}/${totalWorkers}`;
             counter.className = 'progress-counter pending';
         }
     }
