@@ -25,11 +25,12 @@ def get_database_url():
         return url
 
     # Build from individual Railway MySQL variables
-    host = os.environ.get('MYSQLHOST')
-    port = os.environ.get('MYSQLPORT', '3306')
-    database = os.environ.get('MYSQLDATABASE')
-    user = os.environ.get('MYSQLUSER')
-    password = os.environ.get('MYSQLPASSWORD')
+    # Railway uses both formats: MYSQLHOST and MYSQL_HOST
+    host = os.environ.get('MYSQLHOST') or os.environ.get('MYSQL_HOST')
+    port = os.environ.get('MYSQLPORT') or os.environ.get('MYSQL_PORT') or '3306'
+    database = os.environ.get('MYSQLDATABASE') or os.environ.get('MYSQL_DATABASE')
+    user = os.environ.get('MYSQLUSER') or os.environ.get('MYSQL_USER')
+    password = os.environ.get('MYSQLPASSWORD') or os.environ.get('MYSQL_PASSWORD') or ''
 
     if all([host, database, user]):
         print(f"[Config] Using individual MySQL vars: {user}@{host}:{port}/{database}", file=sys.stderr)
