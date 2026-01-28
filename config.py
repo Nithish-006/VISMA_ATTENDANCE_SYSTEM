@@ -1,4 +1,5 @@
 import os
+import sys
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,14 +9,19 @@ def get_database_url():
     """Build database URL from Railway environment variables."""
     # First check for explicit DATABASE_URL
     if os.environ.get('DATABASE_URL'):
-        return os.environ.get('DATABASE_URL')
+        url = os.environ.get('DATABASE_URL')
+        if url.startswith('mysql://'):
+            url = url.replace('mysql://', 'mysql+pymysql://', 1)
+        print(f"[Config] Using DATABASE_URL", file=sys.stderr)
+        return url
 
-    # Check for Railway's MYSQL_URL
+    # Check for Railway's MYSQL_URL (auto-provided when MySQL is linked)
     if os.environ.get('MYSQL_URL'):
         url = os.environ.get('MYSQL_URL')
         # Railway uses mysql:// but SQLAlchemy needs mysql+pymysql://
         if url.startswith('mysql://'):
             url = url.replace('mysql://', 'mysql+pymysql://', 1)
+        print(f"[Config] Using MYSQL_URL", file=sys.stderr)
         return url
 
     # Build from individual Railway MySQL variables
@@ -26,9 +32,11 @@ def get_database_url():
     password = os.environ.get('MYSQLPASSWORD')
 
     if all([host, database, user]):
+        print(f"[Config] Using individual MySQL vars: {user}@{host}:{port}/{database}", file=sys.stderr)
         return f'mysql+pymysql://{user}:{password}@{host}:{port}/{database}'
 
     # Fallback to local development
+    print("[Config] No Railway MySQL vars found, using local database", file=sys.stderr)
     return 'mysql+pymysql://root:@localhost/visma_attendance'
 
 
