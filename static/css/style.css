@@ -1416,7 +1416,7 @@ tr:hover td {
 }
 
 .mobile-only {
-    display: none;
+    display: none !important;
 }
 
 .salary-cards {
