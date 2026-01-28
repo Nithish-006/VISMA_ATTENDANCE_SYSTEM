@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Visma Attendance System{% endblock %}
+
+{% block content %}
+<div class="landing-container">
+    <div class="landing-header">
+        <div class="landing-logo">V</div>
+        <h1 class="landing-title">Visma Attendance</h1>
+        <p class="landing-subtitle">Factory worker attendance and salary management</p>
+    </div>
+
+    <div class="card-container">
+        <a href="{{ url_for('attendance_page') }}" class="landing-card">
+            <div class="card-icon">
+                <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                    <path d="M9 14l2 2 4-4"/>
+                </svg>
+            </div>
+            <h2 class="card-title">Attendance</h2>
+            <p class="card-description">Mark daily attendance, track overtime hours, and manage worker records</p>
+            <span class="card-arrow">&rarr;</span>
+        </a>
+
+        <a href="{{ url_for('salary_page') }}" class="landing-card">
+            <div class="card-icon">
+                <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                    <line x1="6" y1="11" x2="6" y2="11"/>
+                    <line x1="18" y1="11" x2="18" y2="11"/>
+                </svg>
+            </div>
+            <h2 class="card-title">Salary</h2>
+            <p class="card-description">View monthly salary reports, calculate wages, and export data</p>
+            <span class="card-arrow">&rarr;</span>
+        </a>
+    </div>
+</div>
+{% endblock %}

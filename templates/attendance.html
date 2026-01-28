@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}Labours - Visma{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-content">
+            <a href="{{ url_for('index') }}" class="back-btn">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Back
+            </a>
+            <h1 class="page-title">All Labours</h1>
+            <div class="header-controls">
+                <a href="{{ url_for('mark_attendance_page') }}" class="btn btn-primary">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    Mark Attendance
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div id="laboursContainer" class="labours-list">
+            <div class="loading">Loading labours...</div>
+        </div>
+    </main>
+</div>
+
+<!-- Labour History Modal -->
+<div id="historyModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modalTitle">Labour History</h2>
+            <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div id="modalBody" class="modal-body">
+            <div class="loading">Loading...</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', loadLabours);
+
+async function loadLabours() {
+    const container = document.getElementById('laboursContainer');
+
+    try {
+        const response = await fetch('/api/labours');
+        const labours = await response.json();
+
+        if (labours.length === 0) {
+            container.innerHTML = '<div class="empty-state">No labours found. Import data first.</div>';
+            return;
+        }
+
+        // Group by team
+        const teams = {};
+        labours.forEach(l => {
+            const team = l.team || 'Unassigned';
+            if (!teams[team]) teams[team] = [];
+            teams[team].push(l);
+        });
+
+        let html = '';
+        for (const [team, members] of Object.entries(teams)) {
+            html += `
+                <div class="team-section">
+                    <h2 class="team-title">${team} <span class="count">(${members.length})</span></h2>
+                    <div class="labour-cards">
+                        ${members.map(l => `
+                            <div class="labour-card" onclick="showHistory(${l.worker_id})">
+                                <div class="labour-info">
+                                    <h3 class="labour-name">${l.name}</h3>
+                                    <p class="labour-designation">${l.designation || 'N/A'}</p>
+                                </div>
+                                <div class="labour-meta">
+                                    <span class="last-attendance">Last: ${l.last_attendance || 'N/A'}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        container.innerHTML = html;
+
+    } catch (error) {
+        container.innerHTML = '<div class="error">Error loading data. Is the server running?</div>';
+        console.error(error);
+    }
+}
+
+async function showHistory(workerId) {
+    const modal = document.getElementById('historyModal');
+    const title = document.getElementById('modalTitle');
+    const body = document.getElementById('modalBody');
+
+    modal.style.display = 'flex';
+    title.textContent = 'Loading...';
+    body.innerHTML = '<div class="loading">Loading history...</div>';
+
+    try {
+        const response = await fetch(`/api/labours/${workerId}/history`);
+        const data = await response.json();
+
+        // Group attendance by month
+        const monthlyData = {};
+        data.attendance.forEach(a => {
+            const date = new Date(a.date);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            if (!monthlyData[monthKey]) {
+                monthlyData[monthKey] = {
+                    records: [],
+                    presentDays: 0,
+                    absentDays: 0,
+                    holidays: 0,
+                    totalOT: 0
+                };
+            }
+            monthlyData[monthKey].records.push(a);
+            if (a.status === 'P') monthlyData[monthKey].presentDays++;
+            else if (a.status === 'A') monthlyData[monthKey].absentDays++;
+            else if (a.status === 'H') monthlyData[monthKey].holidays++;
+            monthlyData[monthKey].totalOT += parseFloat(a.ot_hours) || 0;
+        });
+
+        // Sort months (newest first) and sort days within each month (ascending)
+        const sortedMonths = Object.keys(monthlyData).sort().reverse();
+
+        // Sort records within each month by day (ascending)
+        sortedMonths.forEach(monthKey => {
+            monthlyData[monthKey].records.sort((a, b) => new Date(a.date) - new Date(b.date));
+        });
+
+        title.textContent = data.name;
+        body.innerHTML = `
+            <div class="worker-info-bar">
+                <span class="info-chip"><strong>ID:</strong> ${data.worker_id}</span>
+                <span class="info-chip"><strong>Designation:</strong> ${data.designation || 'N/A'}</span>
+                <span class="info-chip"><strong>Team:</strong> ${data.team || 'N/A'}</span>
+            </div>
+
+            <div class="history-months">
+                ${sortedMonths.map(monthKey => {
+                    const month = monthlyData[monthKey];
+                    const monthName = getMonthName(monthKey);
+                    return `
+                        <div class="history-month-section">
+                            <div class="history-month-header">
+                                <h3 class="history-month-title">${monthName}</h3>
+                                <div class="month-stats">
+                                    <span class="stat present">${month.presentDays}P</span>
+                                    <span class="stat absent">${month.absentDays}A</span>
+                                    <span class="stat holiday">${month.holidays}H</span>
+                                    <span class="stat ot">${month.totalOT} OT</span>
+                                </div>
+                            </div>
+                            <div class="calendar-grid">
+                                ${month.records.map(a => {
+                                    const day = new Date(a.date).getDate();
+                                    return `
+                                        <div class="day-cell ${a.status.toLowerCase()}" title="${a.date}${a.project ? ' - ' + a.project : ''}">
+                                            <span class="day-num">${day}</span>
+                                            <span class="day-status">${a.status}</span>
+                                            ${a.ot_hours > 0 ? `<span class="day-ot">+${a.ot_hours}</span>` : ''}
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+
+    } catch (error) {
+        body.innerHTML = '<div class="error">Error loading history.</div>';
+        console.error(error);
+    }
+}
+
+function getMonthName(monthKey) {
+    const [year, month] = monthKey.split('-');
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+    return `${months[parseInt(month) - 1]} ${year}`;
+}
+
+function closeModal() {
+    document.getElementById('historyModal').style.display = 'none';
+}
+
+document.getElementById('historyModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+</script>
+{% endblock %}

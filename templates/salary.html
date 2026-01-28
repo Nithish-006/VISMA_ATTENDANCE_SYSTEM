@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Salary Report - Visma{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-content">
+            <a href="{{ url_for('index') }}" class="back-btn">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Back
+            </a>
+            <h1 class="page-title">Monthly Salary Report</h1>
+            <div class="header-controls">
+                <button id="exportBtn" class="btn btn-secondary">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Export CSV
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div id="salaryContainer" class="salary-months-container">
+            <div class="loading">Loading salary data...</div>
+        </div>
+    </main>
+</div>
+
+<!-- Base Salary Modal -->
+<div id="salaryModal" class="modal" style="display: none;">
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <h2 id="salaryModalTitle">Set Base Salary</h2>
+            <button class="close-btn" onclick="closeSalaryModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="salaryForm">
+                <input type="hidden" id="salaryWorkerId">
+                <div class="form-group">
+                    <label>Base Salary per Day</label>
+                    <input type="number" id="baseSalaryInput" min="0" step="50" required placeholder="Enter daily rate">
+                </div>
+                <button type="submit" class="submit-btn">Save Salary</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/salary.js') }}"></script>
+{% endblock %}
