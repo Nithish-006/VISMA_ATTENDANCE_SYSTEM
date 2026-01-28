@@ -5,6 +5,33 @@ from config import config
 from models import db
 
 
+def auto_init_database(app):
+    """Auto-initialize database with data if empty (for Railway deployment)."""
+    from models import Salary, Attendance
+
+    with app.app_context():
+        try:
+            # Check if data exists
+            if Salary.query.first() is not None:
+                return  # Data exists, skip
+
+            # Check if Excel files exist
+            if not os.path.exists('Attendance.xlsx') or not os.path.exists('Salary.xlsx'):
+                app.logger.info("Excel files not found, skipping auto-import")
+                return
+
+            app.logger.info("Database empty - auto-importing from Excel files...")
+
+            # Import the data
+            from import_data import import_from_excel
+            import_from_excel()
+
+            app.logger.info("Auto-import completed!")
+
+        except Exception as e:
+            app.logger.error(f"Auto-init failed: {e}")
+
+
 def create_app(config_name=None):
     """Application factory."""
     if config_name is None:
@@ -27,6 +54,10 @@ def create_app(config_name=None):
     # Create database tables
     with app.app_context():
         db.create_all()
+
+    # Auto-initialize if database is empty (Railway deployment)
+    if os.environ.get('FLASK_ENV') == 'production':
+        auto_init_database(app)
 
     # Page routes
     @app.route('/')
