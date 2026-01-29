@@ -105,13 +105,14 @@ def update_salary(record_id):
 
 
 @salary_bp.route('/api/salary/worker/<int:worker_id>', methods=['PUT'])
-def update_worker_base_salary(worker_id):
-    """Update base salary for a worker and recalculate all their monthly records."""
+def update_worker_salary(worker_id):
+    """Update base salary and/or designation for a worker across all monthly records."""
     data = request.get_json()
     base_salary = data.get('base_salary_per_day')
+    designation = data.get('designation')
 
-    if base_salary is None:
-        return jsonify({'error': 'base_salary_per_day is required'}), 400
+    if base_salary is None and designation is None:
+        return jsonify({'error': 'base_salary_per_day or designation is required'}), 400
 
     # Get all salary records for this worker
     records = Salary.query.filter_by(worker_id=worker_id).all()
@@ -121,10 +122,14 @@ def update_worker_base_salary(worker_id):
 
     # Update all records
     for salary in records:
-        salary.base_salary_per_day = base_salary
-        base_pay = salary.total_working_days * float(base_salary)
-        ot_pay = (float(base_salary) / 8) * float(salary.ot_hours) if base_salary > 0 else 0
-        salary.total_salary = base_pay + ot_pay
+        if designation is not None:
+            salary.designation = designation
+
+        if base_salary is not None:
+            salary.base_salary_per_day = base_salary
+            base_pay = salary.total_working_days * float(base_salary)
+            ot_pay = (float(base_salary) / 8) * float(salary.ot_hours) if base_salary > 0 else 0
+            salary.total_salary = base_pay + ot_pay
 
     db.session.commit()
 

@@ -1450,6 +1450,73 @@ body {
     gap: 28px;
 }
 
+/* Month Filter Bar */
+.month-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding: 12px 0;
+}
+
+.filter-pill {
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid var(--border-light);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.filter-pill:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.filter-pill.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+/* Inline Editing */
+.editable {
+    position: relative;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+.editable:hover {
+    background: var(--accent-light) !important;
+}
+
+select.inline-edit-input,
+input.inline-edit-input {
+    width: 100%;
+    padding: 4px 8px;
+    border: 2px solid var(--accent);
+    border-radius: 4px;
+    font-size: inherit;
+    font-family: inherit;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    outline: none;
+    box-sizing: border-box;
+}
+
+select.inline-edit-input {
+    cursor: pointer;
+    appearance: auto;
+}
+
+select.inline-edit-input:focus,
+input.inline-edit-input:focus {
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
 .month-section {
     background: var(--bg-primary);
     border: 1px solid var(--border-light);

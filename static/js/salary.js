@@ -2,6 +2,7 @@
 
 let salaryData = null;
 let pendingBaseSalaryWorkers = [];
+let activeFilter = 'all'; // 'all' or 'YYYY-MM'
 
 document.addEventListener('DOMContentLoaded', function() {
     loadMonthlySalaries();
@@ -33,11 +34,13 @@ async function loadMonthlySalaries() {
         });
         pendingBaseSalaryWorkers = Array.from(uniqueWorkers.values());
 
-        // Render monthly sections
-        container.innerHTML = salaryData.map(month => renderMonthSection(month)).join('');
+        // Render filter bar + monthly sections
+        renderFilterBar();
+        renderFilteredData();
 
         // Attach click listeners to worker rows
         attachWorkerRowListeners();
+        attachEditableListeners();
 
         // Show base salary prompt if needed
         if (pendingBaseSalaryWorkers.length > 0) {
@@ -48,6 +51,54 @@ async function loadMonthlySalaries() {
         container.innerHTML = '<div class="error">Error loading data. Is the server running?</div>';
         console.error(error);
     }
+}
+
+function renderFilterBar() {
+    // Remove existing filter bar if any
+    const existing = document.getElementById('monthFilterBar');
+    if (existing) existing.remove();
+
+    if (!salaryData || salaryData.length === 0) return;
+
+    const filterBar = document.createElement('div');
+    filterBar.id = 'monthFilterBar';
+    filterBar.className = 'month-filter-bar';
+
+    // Build pills: "All" + each month in chronological order
+    const months = [...salaryData].reverse(); // chronological (oldest first)
+    const pills = [{ key: 'all', label: 'All' }];
+    months.forEach(m => {
+        const shortMonth = m.month_name.split(' ')[0].substring(0, 3);
+        pills.push({ key: m.month, label: `${shortMonth}-${m.year}` });
+    });
+
+    filterBar.innerHTML = pills.map(p =>
+        `<button class="filter-pill${activeFilter === p.key ? ' active' : ''}" data-filter="${p.key}">${p.label}</button>`
+    ).join('');
+
+    const container = document.getElementById('salaryContainer');
+    container.parentNode.insertBefore(filterBar, container);
+
+    // Click handlers
+    filterBar.querySelectorAll('.filter-pill').forEach(btn => {
+        btn.addEventListener('click', function() {
+            activeFilter = this.dataset.filter;
+            filterBar.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            renderFilteredData();
+            attachWorkerRowListeners();
+            attachEditableListeners();
+        });
+    });
+}
+
+function renderFilteredData() {
+    const container = document.getElementById('salaryContainer');
+    const filtered = activeFilter === 'all'
+        ? salaryData
+        : salaryData.filter(m => m.month === activeFilter);
+
+    container.innerHTML = filtered.map(month => renderMonthSection(month)).join('');
 }
 
 function renderMonthSection(month) {
@@ -93,8 +144,8 @@ function renderMonthSection(month) {
                                             data-month="${month.month_num}"
                                             data-worker-name="${w.name}">
                                             <td class="worker-name">${w.name}</td>
-                                            <td>${w.designation || '-'}</td>
-                                            <td class="right">${w.base_salary_per_day ? formatCurrency(w.base_salary_per_day) : '<span class="warning">Not set</span>'}</td>
+                                            <td class="editable" data-field="designation" data-worker-id="${w.worker_id}" data-value="${w.designation || ''}">${w.designation || '-'}</td>
+                                            <td class="right editable" data-field="base_salary_per_day" data-worker-id="${w.worker_id}" data-value="${w.base_salary_per_day || ''}">${w.base_salary_per_day ? formatCurrency(w.base_salary_per_day) : '<span class="warning">Not set</span>'}</td>
                                             <td class="right">${w.working_days}</td>
                                             <td class="right">${w.ot_hours}</td>
                                             <td class="right">${formatCurrency(w.base_pay)}</td>
@@ -118,11 +169,11 @@ function renderMonthSection(month) {
                                         <div class="salary-card-name">${w.name}</div>
                                         <div class="salary-card-total">${formatCurrency(w.total_salary)}</div>
                                     </div>
-                                    <div class="salary-card-designation">${w.designation || '-'}</div>
+                                    <div class="salary-card-designation editable" data-field="designation" data-worker-id="${w.worker_id}" data-value="${w.designation || ''}">${w.designation || '-'}</div>
                                     <div class="salary-card-details">
                                         <div class="salary-card-item">
                                             <span class="label">Base/Day</span>
-                                            <span class="value">${w.base_salary_per_day ? formatCurrency(w.base_salary_per_day) : '<span class="warning">Not set</span>'}</span>
+                                            <span class="value editable" data-field="base_salary_per_day" data-worker-id="${w.worker_id}" data-value="${w.base_salary_per_day || ''}">${w.base_salary_per_day ? formatCurrency(w.base_salary_per_day) : '<span class="warning">Not set</span>'}</span>
                                         </div>
                                         <div class="salary-card-item">
                                             <span class="label">Days</span>
@@ -423,6 +474,198 @@ function attachWorkerRowListeners() {
             showAttendanceHistory(workerId, year, month, workerName);
         });
     });
+}
+
+function attachEditableListeners() {
+    document.querySelectorAll('.editable').forEach(cell => {
+        cell.style.cursor = 'text';
+        cell.title = 'Click to edit';
+        cell.addEventListener('click', function(e) {
+            e.stopPropagation();
+            startInlineEdit(this);
+        });
+    });
+}
+
+function getUniqueDesignations() {
+    if (!salaryData) return [];
+    const set = new Set();
+    salaryData.forEach(m => m.workers.forEach(w => {
+        if (w.designation) set.add(w.designation);
+    }));
+    return [...set].sort();
+}
+
+function startInlineEdit(cell) {
+    // Prevent double-editing
+    if (cell.querySelector('input, select')) return;
+
+    const field = cell.dataset.field;
+    const workerId = cell.dataset.workerId;
+    const originalValue = cell.dataset.value;
+    const originalHTML = cell.innerHTML;
+
+    cell.innerHTML = '';
+
+    if (field === 'designation') {
+        startDesignationEdit(cell, workerId, originalValue, originalHTML);
+    } else {
+        startNumberEdit(cell, workerId, originalValue, originalHTML);
+    }
+}
+
+function startDesignationEdit(cell, workerId, originalValue, originalHTML) {
+    const designations = getUniqueDesignations();
+
+    const select = document.createElement('select');
+    select.className = 'inline-edit-input';
+
+    // Build options: existing designations + "Custom..."
+    const emptyOpt = document.createElement('option');
+    emptyOpt.value = '';
+    emptyOpt.textContent = '-- Select --';
+    select.appendChild(emptyOpt);
+
+    designations.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = d;
+        if (d === originalValue) opt.selected = true;
+        select.appendChild(opt);
+    });
+
+    const customOpt = document.createElement('option');
+    customOpt.value = '__custom__';
+    customOpt.textContent = 'Custom...';
+    select.appendChild(customOpt);
+
+    cell.appendChild(select);
+    select.focus();
+
+    function saveDesignation(value) {
+        const newValue = value.trim();
+        if (newValue === originalValue) {
+            cell.innerHTML = originalHTML;
+            return;
+        }
+        fetch(`/api/salary/worker/${workerId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ designation: newValue })
+        })
+        .then(res => {
+            if (!res.ok) throw new Error('Failed to update');
+            return res.json();
+        })
+        .then(() => loadMonthlySalaries())
+        .catch(err => {
+            console.error(err);
+            cell.innerHTML = originalHTML;
+            alert('Failed to save. Please try again.');
+        });
+    }
+
+    select.addEventListener('change', function() {
+        if (this.value === '__custom__') {
+            // Switch to text input for custom entry
+            cell.innerHTML = '';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'inline-edit-input';
+            input.placeholder = 'Type designation...';
+            input.value = '';
+            cell.appendChild(input);
+            input.focus();
+
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (this.value.trim()) saveDesignation(this.value);
+                    else cell.innerHTML = originalHTML;
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cell.innerHTML = originalHTML;
+                }
+            });
+            input.addEventListener('blur', function() {
+                if (this.value.trim()) saveDesignation(this.value);
+                else cell.innerHTML = originalHTML;
+            });
+        } else if (this.value === '') {
+            cell.innerHTML = originalHTML;
+        } else {
+            saveDesignation(this.value);
+        }
+    });
+
+    select.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            cell.innerHTML = originalHTML;
+        }
+    });
+
+    select.addEventListener('blur', function() {
+        // Small delay to allow change event to fire first
+        setTimeout(() => {
+            if (cell.querySelector('select')) {
+                cell.innerHTML = originalHTML;
+            }
+        }, 150);
+    });
+}
+
+function startNumberEdit(cell, workerId, originalValue, originalHTML) {
+    const input = document.createElement('input');
+    input.className = 'inline-edit-input';
+    input.type = 'number';
+    input.min = '0';
+    input.step = '1';
+    input.value = originalValue || '';
+
+    cell.appendChild(input);
+    input.focus();
+    input.select();
+
+    function save() {
+        const newValue = input.value.trim();
+        if (newValue === originalValue) {
+            cell.innerHTML = originalHTML;
+            return;
+        }
+        const num = parseFloat(newValue);
+        if (isNaN(num) || num < 0) {
+            cell.innerHTML = originalHTML;
+            return;
+        }
+        fetch(`/api/salary/worker/${workerId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ base_salary_per_day: num })
+        })
+        .then(res => {
+            if (!res.ok) throw new Error('Failed to update');
+            return res.json();
+        })
+        .then(() => loadMonthlySalaries())
+        .catch(err => {
+            console.error(err);
+            cell.innerHTML = originalHTML;
+            alert('Failed to save. Please try again.');
+        });
+    }
+
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            save();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cell.innerHTML = originalHTML;
+        }
+    });
+
+    input.addEventListener('blur', save);
 }
 
 async function showAttendanceHistory(workerId, year, month, workerName) {
