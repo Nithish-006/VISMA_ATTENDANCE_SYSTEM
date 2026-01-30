@@ -293,6 +293,172 @@ def get_projects():
     return jsonify([p[0] for p in projects if p[0]])
 
 
+@attendance_bp.route('/api/attendance/summary', methods=['GET'])
+def get_attendance_summary():
+    """Get aggregated attendance summary with filters."""
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+    project_filter = request.args.get('project')
+    worker_id_filter = request.args.get('worker_id')
+
+    if not start_date_str or not end_date_str:
+        return jsonify({'error': 'start_date and end_date are required'}), 400
+
+    try:
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+    # Base query for attendance in date range
+    base_query = Attendance.query.filter(
+        Attendance.date >= start_date,
+        Attendance.date <= end_date
+    )
+
+    if project_filter:
+        base_query = base_query.filter(Attendance.project == project_filter)
+    if worker_id_filter:
+        base_query = base_query.filter(Attendance.worker_id == int(worker_id_filter))
+
+    records = base_query.all()
+
+    # Get worker info map
+    worker_ids = list(set(r.worker_id for r in records))
+    worker_info_map = {}
+    if worker_ids:
+        # Get latest salary record per worker for name/team info
+        subquery = db.session.query(
+            Salary.worker_id,
+            func.max(Salary.year * 100 + Salary.month).label('max_period')
+        ).filter(Salary.worker_id.in_(worker_ids)).group_by(Salary.worker_id).subquery()
+
+        workers = db.session.query(Salary).join(
+            subquery,
+            (Salary.worker_id == subquery.c.worker_id) &
+            (Salary.year * 100 + Salary.month == subquery.c.max_period)
+        ).all()
+
+        for w in workers:
+            worker_info_map[w.worker_id] = {
+                'name': w.name,
+                'team': w.team,
+                'designation': w.designation,
+                'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0
+            }
+
+    # Aggregate by project
+    project_data = {}
+    # Aggregate by date
+    daily_data = {}
+    # Aggregate by worker
+    worker_data = {}
+
+    total_present_days = 0
+    total_ot_hours = 0.0
+
+    for r in records:
+        ot = float(r.ot_hours) if r.ot_hours else 0
+        proj = r.project or 'Unassigned'
+        date_str = r.date.isoformat()
+
+        # Project aggregation
+        if proj not in project_data:
+            project_data[proj] = {'worker_ids': set(), 'present_dates': set(), 'ot_hours': 0}
+        project_data[proj]['worker_ids'].add(r.worker_id)
+        if r.status == 'P':
+            project_data[proj]['present_dates'].add(r.date)
+        project_data[proj]['ot_hours'] += ot
+
+        # Daily aggregation
+        if date_str not in daily_data:
+            daily_data[date_str] = {'present': 0, 'absent': 0, 'holiday': 0, 'ot_hours': 0}
+        if r.status == 'P':
+            daily_data[date_str]['present'] += 1
+            total_present_days += 1
+        elif r.status == 'A':
+            daily_data[date_str]['absent'] += 1
+        elif r.status == 'H':
+            daily_data[date_str]['holiday'] += 1
+        daily_data[date_str]['ot_hours'] += ot
+        total_ot_hours += ot
+
+        # Worker aggregation
+        if r.worker_id not in worker_data:
+            info = worker_info_map.get(r.worker_id, {})
+            worker_data[r.worker_id] = {
+                'worker_id': r.worker_id,
+                'name': info.get('name', f'Worker {r.worker_id}'),
+                'team': info.get('team', ''),
+                'base_salary_per_day': info.get('base_salary_per_day', 0),
+                'present_days': 0,
+                'absent_days': 0,
+                'ot_hours': 0,
+                'projects': set()
+            }
+        if r.status == 'P':
+            worker_data[r.worker_id]['present_days'] += 1
+        elif r.status == 'A':
+            worker_data[r.worker_id]['absent_days'] += 1
+        worker_data[r.worker_id]['ot_hours'] += ot
+        if r.project:
+            worker_data[r.worker_id]['projects'].add(r.project)
+
+    # Build response
+    projects_list = []
+    for name, data in sorted(project_data.items()):
+        projects_list.append({
+            'name': name,
+            'worker_count': len(data['worker_ids']),
+            'working_days': len(data['present_dates']),
+            'ot_hours': round(data['ot_hours'], 2)
+        })
+
+    daily_list = []
+    for date_str in sorted(daily_data.keys()):
+        d = daily_data[date_str]
+        daily_list.append({
+            'date': date_str,
+            'present': d['present'],
+            'absent': d['absent'],
+            'holiday': d['holiday'],
+            'ot_hours': round(d['ot_hours'], 2)
+        })
+
+    workers_list = []
+    total_salary = 0.0
+    for wid, data in sorted(worker_data.items(), key=lambda x: x[1]['name']):
+        base = data['base_salary_per_day']
+        base_pay = data['present_days'] * base
+        ot_pay = (base / 8) * data['ot_hours'] if base > 0 else 0
+        salary = round(base_pay + ot_pay, 2)
+        total_salary += salary
+        workers_list.append({
+            'worker_id': data['worker_id'],
+            'name': data['name'],
+            'team': data['team'],
+            'present_days': data['present_days'],
+            'absent_days': data['absent_days'],
+            'ot_hours': round(data['ot_hours'], 2),
+            'salary': salary,
+            'projects': sorted(list(data['projects']))
+        })
+
+    # Working days = unique dates that had at least one Present worker
+    working_days = sum(1 for d in daily_data.values() if d['present'] > 0)
+
+    return jsonify({
+        'total_workers': len(worker_data),
+        'working_days': working_days,
+        'total_present_days': total_present_days,
+        'total_ot_hours': round(total_ot_hours, 2),
+        'total_salary': round(total_salary, 2),
+        'projects': projects_list,
+        'daily_breakdown': daily_list,
+        'workers': workers_list
+    })
+
+
 @attendance_bp.route('/api/attendance/export', methods=['GET'])
 def export_attendance():
     """Get all attendance records for export."""

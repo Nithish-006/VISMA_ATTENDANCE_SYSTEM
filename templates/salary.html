@@ -26,8 +26,36 @@
     </header>
 
     <main class="main-content">
-        <div id="salaryContainer" class="salary-months-container">
-            <div class="loading">Loading salary data...</div>
+        <div class="salary-summary-section">
+            <div class="summary-filters">
+                <div class="filter-group">
+                    <label>From</label>
+                    <input type="date" id="salaryStartDate" class="date-input">
+                </div>
+                <div class="filter-group">
+                    <label>To</label>
+                    <input type="date" id="salaryEndDate" class="date-input">
+                </div>
+                <div class="filter-group">
+                    <label>Project</label>
+                    <select id="salaryProject" class="select-input">
+                        <option value="">All Projects</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Labour</label>
+                    <select id="salaryWorker" class="select-input">
+                        <option value="">All Labours</option>
+                    </select>
+                </div>
+                <div class="filter-action">
+                    <button class="btn btn-primary" onclick="loadSalarySummary()">Load</button>
+                    <button class="btn btn-secondary" onclick="resetSalaryFilters()">Reset</button>
+                </div>
+            </div>
+            <div id="monthPillsBar" class="month-filter-bar"></div>
+            <div id="salarySummaryDashboard" class="summary-dashboard">
+            </div>
         </div>
     </main>
 </div>

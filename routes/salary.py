@@ -106,13 +106,15 @@ def update_salary(record_id):
 
 @salary_bp.route('/api/salary/worker/<int:worker_id>', methods=['PUT'])
 def update_worker_salary(worker_id):
-    """Update base salary and/or designation for a worker across all monthly records."""
+    """Update worker details across all monthly salary records."""
     data = request.get_json()
     base_salary = data.get('base_salary_per_day')
     designation = data.get('designation')
+    name = data.get('name')
+    team = data.get('team')
 
-    if base_salary is None and designation is None:
-        return jsonify({'error': 'base_salary_per_day or designation is required'}), 400
+    if base_salary is None and designation is None and name is None and team is None:
+        return jsonify({'error': 'At least one field (name, designation, team, base_salary_per_day) is required'}), 400
 
     # Get all salary records for this worker
     records = Salary.query.filter_by(worker_id=worker_id).all()
@@ -122,8 +124,12 @@ def update_worker_salary(worker_id):
 
     # Update all records
     for salary in records:
+        if name is not None:
+            salary.name = name
         if designation is not None:
             salary.designation = designation
+        if team is not None:
+            salary.team = team
 
         if base_salary is not None:
             salary.base_salary_per_day = base_salary

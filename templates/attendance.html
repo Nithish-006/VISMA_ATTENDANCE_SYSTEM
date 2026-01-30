@@ -21,6 +21,7 @@
                 <div class="tab-switcher">
                     <button id="tabMark" class="tab-btn active" onclick="showPanel('mark')">Mark Attendance</button>
                     <button id="tabSummary" class="tab-btn" onclick="showPanel('summary')">Summary</button>
+                    <button id="tabEdit" class="tab-btn" onclick="showPanel('edit')">Edit Details</button>
                 </div>
             </div>
 
@@ -66,8 +67,51 @@
             <!-- Panel 2: Summary -->
             <div id="panelSummary" class="panel">
                 <main class="main-content">
+                    <!-- Attendance Summary Section -->
+                    <div class="attendance-summary-section">
+                        <div class="summary-filters">
+                            <div class="filter-group">
+                                <label>From</label>
+                                <input type="date" id="summaryStartDate" class="date-input">
+                            </div>
+                            <div class="filter-group">
+                                <label>To</label>
+                                <input type="date" id="summaryEndDate" class="date-input">
+                            </div>
+                            <div class="filter-group">
+                                <label>Project</label>
+                                <select id="summaryProject" class="select-input">
+                                    <option value="">All Projects</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Labour</label>
+                                <select id="summaryWorker" class="select-input">
+                                    <option value="">All Labours</option>
+                                </select>
+                            </div>
+                            <div class="filter-action">
+                                <button class="btn btn-primary" onclick="loadSummary()">Load</button>
+                                <button class="btn btn-secondary" onclick="resetSummaryFilters()">Reset</button>
+                            </div>
+                        </div>
+                        <div id="summaryDashboard" class="summary-dashboard">
+                            <div class="empty-state">Select a date range and click Load to view summary.</div>
+                        </div>
+                    </div>
+
+                    <h2 class="section-heading">Individual Labours</h2>
                     <div id="laboursContainer" class="labours-list">
                         <div class="loading">Loading labours...</div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- Panel 3: Edit Details -->
+            <div id="panelEdit" class="panel">
+                <main class="main-content">
+                    <div id="editDetailsContainer">
+                        <div class="empty-state">Loading worker details...</div>
                     </div>
                 </main>
             </div>
@@ -133,6 +177,7 @@
 // Panel switching
 let currentPanel = 'mark';
 window.summaryLoaded = false;
+window.editLoaded = false;
 
 function showPanel(panel) {
     if (panel === currentPanel) return;
@@ -141,23 +186,37 @@ function showPanel(panel) {
     const container = document.getElementById('panelsContainer');
     const tabMark = document.getElementById('tabMark');
     const tabSummary = document.getElementById('tabSummary');
+    const tabEdit = document.getElementById('tabEdit');
     const markControls = document.getElementById('markControls');
+
+    // Remove active from all tabs
+    tabMark.classList.remove('active');
+    tabSummary.classList.remove('active');
+    tabEdit.classList.remove('active');
 
     if (panel === 'mark') {
         container.style.transform = 'translateX(0)';
         tabMark.classList.add('active');
-        tabSummary.classList.remove('active');
         markControls.style.display = 'flex';
-    } else {
-        container.style.transform = 'translateX(-50%)';
-        tabMark.classList.remove('active');
+    } else if (panel === 'summary') {
+        container.style.transform = 'translateX(-33.333%)';
         tabSummary.classList.add('active');
         markControls.style.display = 'none';
 
-        // Load summary if not loaded or needs refresh
         if (!window.summaryLoaded) {
             loadLabours();
+            loadSummaryFilters();
+            loadSummary();
             window.summaryLoaded = true;
+        }
+    } else if (panel === 'edit') {
+        container.style.transform = 'translateX(-66.666%)';
+        tabEdit.classList.add('active');
+        markControls.style.display = 'none';
+
+        if (!window.editLoaded) {
+            loadEditDetails();
+            window.editLoaded = true;
         }
     }
 }
@@ -314,5 +373,387 @@ function closeHistoryModal() {
 document.getElementById('historyModal').addEventListener('click', function(e) {
     if (e.target === this) closeHistoryModal();
 });
+
+// ============================================
+// ATTENDANCE SUMMARY
+// ============================================
+
+// Set default date range (current week Mon-Sun)
+(function initSummaryDates() {
+    const today = new Date();
+    const day = today.getDay();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    document.getElementById('summaryStartDate').value = monday.toISOString().split('T')[0];
+    document.getElementById('summaryEndDate').value = sunday.toISOString().split('T')[0];
+})();
+
+// Populate filter dropdowns when summary panel loads
+async function loadSummaryFilters() {
+    try {
+        const [projectsRes, laboursRes] = await Promise.all([
+            fetch('/api/projects'),
+            fetch('/api/labours')
+        ]);
+        const projects = await projectsRes.json();
+        const labours = await laboursRes.json();
+
+        const projectSelect = document.getElementById('summaryProject');
+        projectSelect.innerHTML = '<option value="">All Projects</option>';
+        projects.forEach(p => {
+            projectSelect.innerHTML += `<option value="${p}">${p}</option>`;
+        });
+
+        const workerSelect = document.getElementById('summaryWorker');
+        workerSelect.innerHTML = '<option value="">All Labours</option>';
+        labours.forEach(l => {
+            workerSelect.innerHTML += `<option value="${l.worker_id}">${l.name}</option>`;
+        });
+    } catch (e) {
+        console.error('Error loading summary filters:', e);
+    }
+}
+
+async function loadSummary() {
+    const startDate = document.getElementById('summaryStartDate').value;
+    const endDate = document.getElementById('summaryEndDate').value;
+    const project = document.getElementById('summaryProject').value;
+    const workerId = document.getElementById('summaryWorker').value;
+    const dashboard = document.getElementById('summaryDashboard');
+
+    if (!startDate || !endDate) {
+        dashboard.innerHTML = '<div class="empty-state">Please select both start and end dates.</div>';
+        return;
+    }
+
+    dashboard.innerHTML = '<div class="loading">Loading summary...</div>';
+
+    try {
+        let url = `/api/attendance/summary?start_date=${startDate}&end_date=${endDate}`;
+        if (project) url += `&project=${encodeURIComponent(project)}`;
+        if (workerId) url += `&worker_id=${workerId}`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (response.ok) {
+            renderSummaryDashboard(data);
+        } else {
+            dashboard.innerHTML = `<div class="error">${data.error || 'Error loading summary.'}</div>`;
+        }
+    } catch (error) {
+        dashboard.innerHTML = '<div class="error">Error loading summary data.</div>';
+        console.error(error);
+    }
+}
+
+function renderSummaryDashboard(data) {
+    const dashboard = document.getElementById('summaryDashboard');
+
+    if (data.total_workers === 0) {
+        dashboard.innerHTML = '<div class="empty-state">No attendance data found for the selected filters.</div>';
+        return;
+    }
+
+    let html = '';
+
+    // Stat cards
+    html += `
+        <div class="summary-stat-cards">
+            <div class="summary-stat-card">
+                <div class="summary-stat-label">Workers</div>
+                <div class="summary-stat-value">${data.total_workers}</div>
+            </div>
+            <div class="summary-stat-card stat-success">
+                <div class="summary-stat-label">Working Days</div>
+                <div class="summary-stat-value">${data.working_days}</div>
+            </div>
+            <div class="summary-stat-card stat-accent">
+                <div class="summary-stat-label">OT Hours</div>
+                <div class="summary-stat-value">${data.total_ot_hours}</div>
+            </div>
+            <div class="summary-stat-card stat-info">
+                <div class="summary-stat-label">Projects</div>
+                <div class="summary-stat-value">${data.projects.length}</div>
+            </div>
+        </div>
+    `;
+
+    // Project breakdown
+    if (data.projects.length > 0) {
+        html += `<div class="summary-section-title">Project Breakdown</div>`;
+        html += `<div class="project-breakdown">`;
+        data.projects.forEach(p => {
+            html += `
+                <div class="project-breakdown-card">
+                    <div class="project-breakdown-name">${p.name}</div>
+                    <div class="project-breakdown-stats">
+                        <span class="pb-stat"><strong>${p.worker_count}</strong> workers</span>
+                        <span class="pb-stat stat-present"><strong>${p.working_days}</strong> days</span>
+                        <span class="pb-stat stat-ot"><strong>${p.ot_hours}</strong> OT hrs</span>
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    // Daily breakdown table
+    if (data.daily_breakdown.length > 0) {
+        html += `<div class="summary-section-title">Daily Breakdown</div>`;
+        html += `
+            <div class="daily-breakdown-table-wrap">
+                <table class="daily-breakdown-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th class="right">Present</th>
+                            <th class="right">Absent</th>
+                            <th class="right">Holiday</th>
+                            <th class="right">OT Hours</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.daily_breakdown.map(d => `
+                            <tr>
+                                <td>${formatDate(d.date)}</td>
+                                <td class="right"><span class="stat-badge-sm present">${d.present}</span></td>
+                                <td class="right"><span class="stat-badge-sm absent">${d.absent}</span></td>
+                                <td class="right"><span class="stat-badge-sm holiday">${d.holiday}</span></td>
+                                <td class="right">${d.ot_hours}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    // Worker summary table
+    if (data.workers.length > 0) {
+        html += `<div class="summary-section-title">Worker Summary</div>`;
+        html += `
+            <div class="worker-summary-table-wrap">
+                <table class="worker-summary-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Team</th>
+                            <th class="right">Present</th>
+                            <th class="right">Absent</th>
+                            <th class="right">OT Hours</th>
+                            <th>Projects</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.workers.map(w => `
+                            <tr>
+                                <td class="worker-name">${w.name}</td>
+                                <td>${w.team || '-'}</td>
+                                <td class="right"><span class="stat-badge-sm present">${w.present_days}</span></td>
+                                <td class="right"><span class="stat-badge-sm absent">${w.absent_days}</span></td>
+                                <td class="right">${w.ot_hours}</td>
+                                <td>${w.projects.join(', ') || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    dashboard.innerHTML = html;
+}
+
+function resetSummaryFilters() {
+    // Reset dates to current week
+    const today = new Date();
+    const day = today.getDay();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    document.getElementById('summaryStartDate').value = monday.toISOString().split('T')[0];
+    document.getElementById('summaryEndDate').value = sunday.toISOString().split('T')[0];
+    document.getElementById('summaryProject').value = '';
+    document.getElementById('summaryWorker').value = '';
+    loadSummary();
+}
+
+function formatDate(dateStr) {
+    const d = new Date(dateStr);
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+}
+
+// ============================================
+// EDIT DETAILS
+// ============================================
+
+async function loadEditDetails() {
+    const container = document.getElementById('editDetailsContainer');
+    container.innerHTML = '<div class="loading">Loading worker details...</div>';
+
+    try {
+        const response = await fetch('/api/labours');
+        const labours = await response.json();
+
+        if (labours.length === 0) {
+            container.innerHTML = '<div class="empty-state">No labours found.</div>';
+            return;
+        }
+
+        // Group by team
+        const teams = {};
+        labours.forEach(l => {
+            const team = l.team || 'Unassigned';
+            if (!teams[team]) teams[team] = [];
+            teams[team].push(l);
+        });
+
+        // Get unique team names for datalist
+        const allTeams = Object.keys(teams);
+
+        let html = '<datalist id="editTeamsList">';
+        allTeams.forEach(t => { html += `<option value="${t}">`; });
+        html += '</datalist>';
+
+        for (const [team, members] of Object.entries(teams)) {
+            html += `
+                <div class="team-section" style="margin-bottom: 24px;">
+                    <h2 class="team-title">${team} <span class="count">(${members.length})</span></h2>
+                    <div class="edit-table-wrap">
+                        <table class="edit-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Designation</th>
+                                    <th>Team</th>
+                                    <th>Base Pay/Day</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${members.map(l => `
+                                    <tr data-worker-id="${l.worker_id}" id="editRow_${l.worker_id}">
+                                        <td class="id-cell">${l.worker_id}</td>
+                                        <td><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" oninput="markEditChanged(this)"></td>
+                                        <td>
+                                            <select class="edit-input edit-designation" data-original="${l.designation || ''}" onchange="markEditChanged(this)">
+                                                <option value="">--</option>
+                                                <option value="FITTER" ${l.designation === 'FITTER' ? 'selected' : ''}>FITTER</option>
+                                                <option value="WELDER" ${l.designation === 'WELDER' ? 'selected' : ''}>WELDER</option>
+                                                <option value="HELPER" ${l.designation === 'HELPER' ? 'selected' : ''}>HELPER</option>
+                                                <option value="RIGGER" ${l.designation === 'RIGGER' ? 'selected' : ''}>RIGGER</option>
+                                            </select>
+                                        </td>
+                                        <td><input type="text" class="edit-input edit-team" list="editTeamsList" value="${escapeHtml(l.team || '')}" data-original="${escapeHtml(l.team || '')}" oninput="markEditChanged(this)"></td>
+                                        <td><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
+                                        <td style="white-space: nowrap;">
+                                            <button class="edit-save-btn" onclick="saveWorkerDetails(${l.worker_id})">Save</button>
+                                            <span class="edit-status" id="editStatus_${l.worker_id}"></span>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        container.innerHTML = html;
+
+    } catch (error) {
+        container.innerHTML = '<div class="error">Error loading worker details.</div>';
+        console.error(error);
+    }
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function markEditChanged(input) {
+    if (input.value !== input.dataset.original) {
+        input.classList.add('changed');
+    } else {
+        input.classList.remove('changed');
+    }
+}
+
+async function saveWorkerDetails(workerId) {
+    const row = document.getElementById(`editRow_${workerId}`);
+    const btn = row.querySelector('.edit-save-btn');
+    const status = document.getElementById(`editStatus_${workerId}`);
+
+    const name = row.querySelector('.edit-name').value.trim();
+    const designation = row.querySelector('.edit-designation').value;
+    const team = row.querySelector('.edit-team').value.trim();
+    const basePay = parseFloat(row.querySelector('.edit-base-pay').value) || 0;
+
+    if (!name) {
+        status.textContent = 'Name required';
+        status.className = 'edit-status error';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    status.textContent = '';
+
+    try {
+        const response = await fetch(`/api/salary/worker/${workerId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: name,
+                designation: designation,
+                team: team,
+                base_salary_per_day: basePay
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to save');
+        }
+
+        // Update original values so changed highlighting clears
+        row.querySelector('.edit-name').dataset.original = name;
+        row.querySelector('.edit-designation').dataset.original = designation;
+        row.querySelector('.edit-team').dataset.original = team;
+        row.querySelector('.edit-base-pay').dataset.original = basePay;
+
+        row.querySelectorAll('.edit-input').forEach(inp => inp.classList.remove('changed'));
+
+        btn.textContent = 'Saved';
+        btn.classList.add('saved');
+        status.textContent = '';
+        status.className = 'edit-status success';
+
+        // Invalidate summary cache
+        window.summaryLoaded = false;
+
+        setTimeout(() => {
+            btn.textContent = 'Save';
+            btn.classList.remove('saved');
+        }, 2000);
+
+    } catch (error) {
+        status.textContent = 'Error';
+        status.className = 'edit-status error';
+        console.error(error);
+    } finally {
+        btn.disabled = false;
+    }
+}
 </script>
 {% endblock %}
