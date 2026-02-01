@@ -56,8 +56,8 @@ function renderMonthPills() {
             const firstDay = new Date(year, month - 1, 1);
             const lastDay = new Date(year, month, 0);
 
-            document.getElementById('salaryStartDate').value = firstDay.toISOString().split('T')[0];
-            document.getElementById('salaryEndDate').value = lastDay.toISOString().split('T')[0];
+            document.getElementById('salaryStartDate').value = `${year}-${String(month).padStart(2,'0')}-01`;
+            document.getElementById('salaryEndDate').value = `${year}-${String(month).padStart(2,'0')}-${String(lastDay.getDate()).padStart(2,'0')}`;
 
             // Reload summary
             loadSalarySummary();

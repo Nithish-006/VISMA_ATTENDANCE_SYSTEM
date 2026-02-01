@@ -362,13 +362,13 @@ def get_attendance_summary():
         proj = r.project or 'Unassigned'
         date_str = r.date.isoformat()
 
-        # Project aggregation
-        if proj not in project_data:
-            project_data[proj] = {'worker_ids': set(), 'present_dates': set(), 'ot_hours': 0}
-        project_data[proj]['worker_ids'].add(r.worker_id)
+        # Project aggregation - only include present workers
         if r.status == 'P':
+            if proj not in project_data:
+                project_data[proj] = {'worker_ids': set(), 'present_dates': set(), 'ot_hours': 0}
+            project_data[proj]['worker_ids'].add(r.worker_id)
             project_data[proj]['present_dates'].add(r.date)
-        project_data[proj]['ot_hours'] += ot
+            project_data[proj]['ot_hours'] += ot
 
         # Daily aggregation
         if date_str not in daily_data:
