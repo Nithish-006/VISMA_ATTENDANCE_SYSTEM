@@ -69,6 +69,12 @@
                 <main class="main-content">
                     <!-- Attendance Summary Section -->
                     <div class="attendance-summary-section">
+                        <div class="quick-filters-container">
+                            <span class="quick-filters-label">Quick Filters:</span>
+                            <button class="btn btn-secondary btn-sm" onclick="setQuickFilter('today')">Today</button>
+                            <button class="btn btn-secondary btn-sm" onclick="setQuickFilter('yesterday')">Yesterday</button>
+                            <input type="date" id="quickDatePicker" class="date-input quick-date-picker" onchange="setQuickFilterDate(this.value)" placeholder="Pick a date">
+                        </div>
                         <div class="summary-filters">
                             <div class="filter-group">
                                 <label>From</label>
@@ -582,6 +588,31 @@ function resetSummaryFilters() {
     document.getElementById('summaryProject').value = '';
     document.getElementById('summaryWorker').value = '';
     loadSummary();
+}
+
+function setQuickFilter(filter) {
+    const today = new Date();
+    let startDate, endDate;
+
+    if (filter === 'today') {
+        startDate = endDate = today;
+    } else if (filter === 'yesterday') {
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        startDate = endDate = yesterday;
+    }
+
+    document.getElementById('summaryStartDate').value = startDate.toISOString().split('T')[0];
+    document.getElementById('summaryEndDate').value = endDate.toISOString().split('T')[0];
+    loadSummary();
+}
+
+function setQuickFilterDate(dateValue) {
+    if (dateValue) {
+        document.getElementById('summaryStartDate').value = dateValue;
+        document.getElementById('summaryEndDate').value = dateValue;
+        loadSummary();
+    }
 }
 
 function formatDate(dateStr) {

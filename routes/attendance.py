@@ -353,6 +353,8 @@ def get_attendance_summary():
     daily_data = {}
     # Aggregate by worker
     worker_data = {}
+    # Track present workers (for KPI)
+    present_workers = set()
 
     total_present_days = 0
     total_ot_hours = 0.0
@@ -369,6 +371,8 @@ def get_attendance_summary():
             project_data[proj]['worker_ids'].add(r.worker_id)
             project_data[proj]['present_dates'].add(r.date)
             project_data[proj]['ot_hours'] += ot
+            # Track this worker as present
+            present_workers.add(r.worker_id)
 
         # Daily aggregation
         if date_str not in daily_data:
@@ -448,7 +452,7 @@ def get_attendance_summary():
     working_days = sum(1 for d in daily_data.values() if d['present'] > 0)
 
     return jsonify({
-        'total_workers': len(worker_data),
+        'total_workers': len(present_workers),  # Only count workers with Present status
         'working_days': working_days,
         'total_present_days': total_present_days,
         'total_ot_hours': round(total_ot_hours, 2),

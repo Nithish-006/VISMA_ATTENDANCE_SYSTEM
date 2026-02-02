@@ -489,6 +489,12 @@ body {
     white-space: nowrap;
 }
 
+.btn-sm {
+    height: 36px;
+    padding: 0 16px;
+    font-size: 0.875rem;
+}
+
 .btn-primary {
     background: var(--gradient-accent);
     color: white;
@@ -1959,6 +1965,24 @@ tr.total-row td {
     margin-bottom: 40px;
 }
 
+.quick-filters-container {
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.quick-filters-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.quick-date-picker {
+    height: 36px;
+}
+
 .summary-filters {
     display: flex;
     gap: 12px;
@@ -2404,6 +2428,26 @@ tr.total-row td {
     }
 
     /* Summary responsive */
+    .quick-filters-container {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .quick-filters-label {
+        font-size: 0.8125rem;
+    }
+
+    .quick-filters-container .btn-sm {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .quick-date-picker {
+        width: 100%;
+        height: 40px;
+    }
+
     .summary-filters {
         flex-direction: column;
         gap: 10px;
