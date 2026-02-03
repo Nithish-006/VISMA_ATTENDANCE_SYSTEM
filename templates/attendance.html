@@ -687,6 +687,7 @@ async function loadEditDetails() {
                                         <td><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
                                         <td style="white-space: nowrap;">
                                             <button class="edit-save-btn" onclick="saveWorkerDetails(${l.worker_id})">Save</button>
+                                            <button class="edit-delete-btn" onclick="deleteWorker(${l.worker_id}, '${escapeHtml(l.name)}')">Delete</button>
                                             <span class="edit-status" id="editStatus_${l.worker_id}"></span>
                                         </td>
                                     </tr>
@@ -784,6 +785,54 @@ async function saveWorkerDetails(workerId) {
         console.error(error);
     } finally {
         btn.disabled = false;
+    }
+}
+
+async function deleteWorker(workerId, workerName) {
+    if (!confirm(`Are you sure you want to delete worker "${workerName}" (ID: ${workerId})?\n\nThis will permanently delete all attendance and salary records for this worker.`)) {
+        return;
+    }
+
+    const row = document.getElementById(`editRow_${workerId}`);
+    const status = document.getElementById(`editStatus_${workerId}`);
+    const deleteBtn = row.querySelector('.edit-delete-btn');
+
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting...';
+    status.textContent = '';
+
+    try {
+        const response = await fetch(`/api/salary/worker/${workerId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to delete');
+        }
+
+        row.style.transition = 'opacity 0.3s';
+        row.style.opacity = '0';
+        setTimeout(() => {
+            row.remove();
+            // Update team member count
+            document.querySelectorAll('.team-section').forEach(section => {
+                const rows = section.querySelectorAll('tbody tr');
+                const countSpan = section.querySelector('.count');
+                if (countSpan) countSpan.textContent = `(${rows.length})`;
+                if (rows.length === 0) section.remove();
+            });
+        }, 300);
+
+        window.summaryLoaded = false;
+
+    } catch (error) {
+        status.textContent = 'Delete failed';
+        status.className = 'edit-status error';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.disabled = false;
+        console.error(error);
     }
 }
 </script>

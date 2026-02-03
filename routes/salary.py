@@ -140,3 +140,29 @@ def update_worker_salary(worker_id):
     db.session.commit()
 
     return jsonify({'message': f'Updated {len(records)} records', 'worker_id': worker_id})
+
+
+@salary_bp.route('/api/salary/worker/<int:worker_id>', methods=['DELETE'])
+def delete_worker(worker_id):
+    """Delete a worker and all their attendance and salary records."""
+    salary_records = Salary.query.filter_by(worker_id=worker_id).all()
+    attendance_records = Attendance.query.filter_by(worker_id=worker_id).all()
+
+    if not salary_records and not attendance_records:
+        return jsonify({'error': 'Worker not found'}), 404
+
+    salary_count = len(salary_records)
+    attendance_count = len(attendance_records)
+
+    for record in attendance_records:
+        db.session.delete(record)
+    for record in salary_records:
+        db.session.delete(record)
+
+    db.session.commit()
+
+    return jsonify({
+        'message': f'Worker {worker_id} deleted',
+        'deleted_salary_records': salary_count,
+        'deleted_attendance_records': attendance_count
+    })

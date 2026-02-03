@@ -2633,6 +2633,32 @@ select.edit-input {
     background: var(--gradient-success);
 }
 
+.edit-delete-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--danger);
+    color: white;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: 6px;
+}
+
+.edit-delete-btn:hover {
+    background: #dc2626;
+    box-shadow: var(--shadow-md);
+}
+
+.edit-delete-btn:disabled {
+    background: var(--text-tertiary);
+    cursor: not-allowed;
+}
+
 .edit-status {
     display: inline-block;
     font-size: 0.75rem;
