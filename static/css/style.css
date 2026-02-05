@@ -120,7 +120,6 @@ body {
 /* Hero */
 .landing-hero {
     text-align: center;
-    animation: fade-up 0.8s ease-out;
 }
 
 .brand-logo {
@@ -181,7 +180,6 @@ body {
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: hidden;
     position: relative;
-    animation: fade-up 0.8s ease-out 0.2s backwards;
     box-shadow:
         0 10px 15px -3px rgba(0, 0, 0, 0.05),
         0 4px 6px -2px rgba(0, 0, 0, 0.025);
@@ -340,18 +338,6 @@ body {
 
 .landing-footer p {
     margin: 0;
-}
-
-@keyframes fade-up {
-    from {
-        opacity: 0;
-        transform: translateY(30px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 
 /* ============================================
