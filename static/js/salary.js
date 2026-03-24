@@ -83,6 +83,11 @@ function initSalarySummary() {
 
     loadSalaryFilters();
     loadSalarySummary();
+
+    // Auto-load when any filter changes
+    ['salaryStartDate', 'salaryEndDate', 'salaryProject', 'salaryWorker'].forEach(id => {
+        document.getElementById(id).addEventListener('change', loadSalarySummary);
+    });
 }
 
 async function loadSalaryFilters() {
@@ -322,8 +327,15 @@ async function exportExcel() {
     `;
 
     try {
-        // Fetch attendance data
-        const attendanceResponse = await fetch('/api/attendance/export');
+        // Check if a project filter is selected
+        const selectedProject = document.getElementById('salaryProject')?.value || '';
+
+        // Fetch attendance data (filtered by project if selected)
+        let exportUrl = '/api/attendance/export';
+        if (selectedProject) {
+            exportUrl += `?project=${encodeURIComponent(selectedProject)}`;
+        }
+        const attendanceResponse = await fetch(exportUrl);
         const attendanceData = await attendanceResponse.json();
 
         // Create workbook
@@ -360,6 +372,14 @@ async function exportExcel() {
                 };
             });
 
+            // Filter workers to only those with attendance in this month when project is selected
+            const monthWorkers = selectedProject
+                ? month.workers.filter(w => attendanceMap[w.worker_id])
+                : month.workers;
+
+            // Skip this month if no workers match the project filter
+            if (monthWorkers.length === 0) continue;
+
             // Build header rows
             const titleRow = [`LABOUR ATTENDANCE FOR ${sheetName}`];
             const headerRow1 = ['S. No', 'Name', 'DESIGNATION', 'TEAM'];
@@ -385,7 +405,7 @@ async function exportExcel() {
             let sNo = 1;
 
             const teams = {};
-            month.workers.forEach(w => {
+            monthWorkers.forEach(w => {
                 const team = w.team || 'Unassigned';
                 if (!teams[team]) teams[team] = [];
                 teams[team].push(w);
@@ -420,10 +440,10 @@ async function exportExcel() {
             // --- Summary sections below worker rows ---
 
             // Compute summary data from this month's attendance
-            const totalWorkers = month.workers.length;
-            const totalPresent = month.workers.reduce((s, w) => s + (w.working_days || 0), 0);
-            const totalOT = month.workers.reduce((s, w) => s + (w.ot_hours || 0), 0);
-            const totalSalaryAmt = month.workers.reduce((s, w) => s + (w.total_salary || 0), 0);
+            const totalWorkers = monthWorkers.length;
+            const totalPresent = monthWorkers.reduce((s, w) => s + (w.working_days || 0), 0);
+            const totalOT = monthWorkers.reduce((s, w) => s + (w.ot_hours || 0), 0);
+            const totalSalaryAmt = monthWorkers.reduce((s, w) => s + (w.total_salary || 0), 0);
 
             // Project breakdown
             const projectStats = {};
@@ -517,7 +537,8 @@ async function exportExcel() {
             XLSX.utils.book_append_sheet(wb, sheet, sheetName);
         }
 
-        const fileName = `salary_report_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const projectSuffix = selectedProject ? `_${selectedProject.replace(/\s+/g, '_')}` : '';
+        const fileName = `salary_report${projectSuffix}_${new Date().toISOString().split('T')[0]}.xlsx`;
         XLSX.writeFile(wb, fileName);
 
     } catch (error) {

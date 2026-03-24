@@ -466,8 +466,10 @@ def get_attendance_summary():
 @attendance_bp.route('/api/attendance/export', methods=['GET'])
 def export_attendance():
     """Get all attendance records for export."""
+    project = request.args.get('project', '').strip()
+
     # Get all attendance records with worker info
-    records = db.session.query(
+    query = db.session.query(
         Attendance,
         Salary.name,
         Salary.designation,
@@ -475,7 +477,12 @@ def export_attendance():
     ).join(
         Salary,
         (Attendance.worker_id == Salary.worker_id)
-    ).distinct(
+    )
+
+    if project:
+        query = query.filter(Attendance.project == project)
+
+    records = query.distinct(
         Attendance.id
     ).order_by(
         Attendance.date.desc(),
