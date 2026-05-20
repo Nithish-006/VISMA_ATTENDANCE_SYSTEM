@@ -1,8 +1,33 @@
 import os
 from flask import Flask, render_template
 from flask_cors import CORS
+from sqlalchemy import inspect, text
 from config import config
 from models import db
+
+
+def run_migrations(app):
+    """Apply lightweight schema changes that db.create_all() can't handle.
+
+    create_all() makes new tables (e.g. supervisor) but never alters existing
+    ones, so adding attendance.supervisor_id to a live DB needs an explicit
+    ALTER. Idempotent: checks the column exists before adding it.
+    """
+    with app.app_context():
+        try:
+            inspector = inspect(db.engine)
+            if 'attendance' not in inspector.get_table_names():
+                return
+            columns = [c['name'] for c in inspector.get_columns('attendance')]
+            if 'supervisor_id' not in columns:
+                db.session.execute(
+                    text('ALTER TABLE attendance ADD COLUMN supervisor_id INTEGER NULL')
+                )
+                db.session.commit()
+                app.logger.info("Migration: added attendance.supervisor_id")
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Migration failed: {e}")
 
 
 def auto_init_database(app):
@@ -54,6 +79,9 @@ def create_app(config_name=None):
     # Create database tables
     with app.app_context():
         db.create_all()
+
+    # Apply incremental schema migrations (e.g. attendance.supervisor_id)
+    run_migrations(app)
 
     # Auto-initialize if database is empty (Railway deployment)
     if os.environ.get('FLASK_ENV') == 'production':

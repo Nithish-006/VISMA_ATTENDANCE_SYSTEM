@@ -1,301 +1,398 @@
-// Mark Attendance Page JavaScript
+// Mark Attendance Page — supervisor-driven flow
+//
+// Flow: pick a supervisor -> add workers one at a time (worker + project +
+// P/A + OT) -> they collect in a list -> Finish Attendance commits everything.
+// Marking is locked to today; the backend rejects any other date.
 
-let attendanceData = {};
-let workerTeams = {};  // Track team changes per worker
+let supervisors = [];
+let selectedSupervisorId = null;
+let allWorkers = [];                  // from /api/labours
 let projectsList = [];
-let teamsList = [];
-let markedWorkers = new Set();  // Track which workers have been marked
-let totalWorkers = 0;
+let markedWorkerIds = new Set();      // workers marked today by ANY supervisor
+let initialPersistedIds = new Set();  // workers this supervisor already had saved today
+let entries = [];                     // working list: {worker_id, name, designation, project, status, ot_hours}
+let entryStatus = null;               // 'P' | 'A' currently chosen in the entry form
+let todayStr = '';
 
-document.addEventListener('DOMContentLoaded', async function() {
-    const dateInput = document.getElementById('dateInput');
-    dateInput.value = new Date().toISOString().split('T')[0];
+document.addEventListener('DOMContentLoaded', async function () {
+    todayStr = new Date().toISOString().split('T')[0];
+    const dateLabel = document.getElementById('markDateLabel');
+    if (dateLabel) dateLabel.textContent = formatTodayLabel();
 
-    // Load projects and teams for autocomplete
-    await loadProjectsAndTeams();
+    await Promise.all([loadSupervisors(), loadWorkers(), loadProjects(), loadTeamsDatalist()]);
 
-    loadAttendance();
+    document.getElementById('supervisorSelect').addEventListener('change', onSupervisorChange);
+    document.getElementById('addSupervisorBtn').addEventListener('click', openSupervisorModal);
+    document.getElementById('supervisorForm').addEventListener('submit', addSupervisor);
+    document.getElementById('addEntryBtn').addEventListener('click', addEntry);
+    document.getElementById('finishBtn').addEventListener('click', finishAttendance);
+    document.getElementById('entryProject').addEventListener('change', onEntryProjectChange);
 
-    dateInput.addEventListener('change', loadAttendance);
-    document.getElementById('saveBtn').addEventListener('click', saveAllAttendance);
+    // Present / Absent toggle
+    document.querySelectorAll('#entryStatusToggle .status-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('#entryStatusToggle .status-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            entryStatus = this.dataset.status;
+        });
+    });
+
+    // Add Labour (existing worker management)
     document.getElementById('addLabourBtn').addEventListener('click', () => {
         document.getElementById('addModal').style.display = 'flex';
     });
     document.getElementById('addLabourForm').addEventListener('submit', addNewLabour);
+
+    document.getElementById('supervisorModal').addEventListener('click', function (e) {
+        if (e.target === this) closeSupervisorModal();
+    });
 });
 
-async function loadProjectsAndTeams() {
-    try {
-        const [projectsRes, teamsRes] = await Promise.all([
-            fetch('/api/projects'),
-            fetch('/api/teams')
-        ]);
-        projectsList = await projectsRes.json();
-        teamsList = await teamsRes.json();
+function formatTodayLabel() {
+    const d = new Date();
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
 
-        // Populate teams datalist in add modal
-        const teamsDatalist = document.getElementById('teamsList');
-        if (teamsDatalist) {
-            teamsDatalist.innerHTML = teamsList.map(t => `<option value="${t}">`).join('');
-        }
-    } catch (error) {
-        console.error('Failed to load projects/teams:', error);
+// ============================================
+// DATA LOADING
+// ============================================
+
+async function loadSupervisors() {
+    try {
+        const res = await fetch('/api/supervisors');
+        supervisors = await res.json();
+    } catch (e) {
+        supervisors = [];
+        console.error('Failed to load supervisors:', e);
+    }
+    populateSupervisorSelect();
+}
+
+async function loadWorkers() {
+    try {
+        const res = await fetch('/api/labours');
+        allWorkers = await res.json();
+    } catch (e) {
+        allWorkers = [];
+        console.error('Failed to load workers:', e);
     }
 }
 
-async function loadAttendance() {
-    const date = document.getElementById('dateInput').value;
-    const container = document.getElementById('workersContainer');
+async function loadProjects() {
+    try {
+        const res = await fetch('/api/projects');
+        projectsList = await res.json();
+    } catch (e) {
+        projectsList = [];
+        console.error('Failed to load projects:', e);
+    }
+}
 
-    container.innerHTML = '<div class="loading">Loading labours...</div>';
+async function loadTeamsDatalist() {
+    try {
+        const res = await fetch('/api/teams');
+        const teams = await res.json();
+        const dl = document.getElementById('teamsList');
+        if (dl) dl.innerHTML = teams.map(t => `<option value="${escapeHtml(t)}">`).join('');
+    } catch (e) {
+        console.error('Failed to load teams:', e);
+    }
+}
+
+function populateSupervisorSelect() {
+    const sel = document.getElementById('supervisorSelect');
+    const current = selectedSupervisorId;
+    sel.innerHTML = '<option value="">-- Select supervisor --</option>' +
+        supervisors.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+    if (current && supervisors.some(s => s.id === current)) {
+        sel.value = current;
+    }
+}
+
+// ============================================
+// SUPERVISOR SELECTION + ROSTER
+// ============================================
+
+async function onSupervisorChange() {
+    const sel = document.getElementById('supervisorSelect');
+    selectedSupervisorId = sel.value ? parseInt(sel.value) : null;
+    const component = document.getElementById('markComponent');
+
+    if (!selectedSupervisorId) {
+        component.style.display = 'none';
+        entries = [];
+        return;
+    }
+
+    component.style.display = 'block';
+    await loadRoster();
+    resetEntryForm();
+}
+
+async function loadRoster() {
+    try {
+        const res = await fetch(`/api/attendance/day-roster/${todayStr}?supervisor_id=${selectedSupervisorId}`);
+        const data = await res.json();
+
+        markedWorkerIds = new Set(data.marked_worker_ids || []);
+        entries = (data.marked_by_supervisor || []).map(r => ({
+            worker_id: r.worker_id,
+            name: r.name,
+            designation: r.designation || '',
+            project: r.project || '',
+            status: r.status === 'P' ? 'P' : 'A',
+            ot_hours: r.ot_hours || 0
+        }));
+        initialPersistedIds = new Set(entries.map(e => e.worker_id));
+
+        populateWorkerSelect();
+        populateProjectSelect();
+        renderEntries();
+    } catch (e) {
+        console.error('Failed to load roster:', e);
+    }
+}
+
+function populateWorkerSelect() {
+    const sel = document.getElementById('entryWorker');
+    // Exclude workers marked today by anyone, plus anyone already in the list.
+    const excluded = new Set(markedWorkerIds);
+    entries.forEach(e => excluded.add(e.worker_id));
+
+    const available = allWorkers.filter(w => !excluded.has(w.worker_id));
+    sel.innerHTML = '<option value="">-- Select worker --</option>' +
+        available.map(w => {
+            const role = w.designation ? ` — ${escapeHtml(w.designation)}` : '';
+            return `<option value="${w.worker_id}" data-name="${escapeHtml(w.name)}" data-designation="${escapeHtml(w.designation || '')}">${escapeHtml(w.name)}${role}</option>`;
+        }).join('');
+}
+
+function populateProjectSelect() {
+    const sel = document.getElementById('entryProject');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">-- Select project --</option>' +
+        projectsList.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('') +
+        '<option value="__new__">+ Add New Project</option>';
+    if (current && current !== '__new__' && projectsList.includes(current)) {
+        sel.value = current;
+    }
+}
+
+function onEntryProjectChange() {
+    const sel = document.getElementById('entryProject');
+    if (sel.value === '__new__') {
+        const np = prompt('Enter new project name:');
+        if (np && np.trim()) {
+            const trimmed = np.trim();
+            if (!projectsList.includes(trimmed)) projectsList.push(trimmed);
+            populateProjectSelect();
+            sel.value = trimmed;
+        } else {
+            sel.value = '';
+        }
+    }
+}
+
+// ============================================
+// ENTRY LIST
+// ============================================
+
+function addEntry() {
+    const wSel = document.getElementById('entryWorker');
+    const workerId = wSel.value ? parseInt(wSel.value) : null;
+    const project = document.getElementById('entryProject').value;
+    let ot = parseFloat(document.getElementById('entryOT').value) || 0;
+    ot = Math.min(8, Math.max(0, ot));
+
+    if (!workerId) { showMessage('Please choose a worker.', 'error'); return; }
+    if (!entryStatus) { showMessage('Please mark Present (P) or Absent (A).', 'error'); return; }
+    if (project === '__new__') { showMessage('Please choose a valid project.', 'error'); return; }
+
+    const opt = wSel.options[wSel.selectedIndex];
+    entries.push({
+        worker_id: workerId,
+        name: opt.dataset.name,
+        designation: opt.dataset.designation || '',
+        project: project || '',
+        status: entryStatus,
+        ot_hours: ot
+    });
+
     hideMessage();
-
-    // Reset tracking
-    markedWorkers = new Set();
-    totalWorkers = 0;
-
-    try {
-        const response = await fetch(`/api/attendance/date/${date}`);
-        const workers = await response.json();
-
-        if (workers.length === 0) {
-            container.innerHTML = '<div class="empty-state">No labours found. Add labours or import data first.</div>';
-            updateProgressCounter();
-            return;
-        }
-
-        totalWorkers = workers.length;
-
-        // Group by team and track worker data
-        const teams = {};
-        workers.forEach(worker => {
-            const team = worker.team || 'Unassigned';
-            if (!teams[team]) teams[team] = [];
-            teams[team].push(worker);
-
-            // Default to 'A' (absent) - user must explicitly mark each worker
-            attendanceData[worker.worker_id] = {
-                worker_id: worker.worker_id,
-                date: date,
-                status: worker.attendance?.status || 'A',
-                ot_hours: worker.attendance?.ot_hours || 0,
-                project: worker.attendance?.project || ''
-            };
-
-            // All workers start as unmarked - user must click to mark
-            // markedWorkers stays empty initially
-
-            // Track current team for each worker
-            workerTeams[worker.worker_id] = worker.team || '';
-        });
-
-        let html = '';
-        for (const [team, teamWorkers] of Object.entries(teams)) {
-            html += `
-                <div class="team-section">
-                    <h2 class="team-title">${team}</h2>
-                    <div class="worker-grid">
-                        ${teamWorkers.map(w => renderWorkerCard(w)).join('')}
-                    </div>
-                </div>
-            `;
-        }
-
-        container.innerHTML = html;
-        attachCardListeners();
-        updateProgressCounter();
-
-    } catch (error) {
-        container.innerHTML = '<div class="error">Error loading data. Is the server running?</div>';
-        console.error(error);
-    }
+    populateWorkerSelect();
+    renderEntries();
+    resetEntryForm();
 }
 
-function renderWorkerCard(worker) {
-    const att = attendanceData[worker.worker_id];
-    const currentTeam = worker.team || '';
-    const isMarked = markedWorkers.has(worker.worker_id);
+function removeEntry(index) {
+    entries.splice(index, 1);
+    populateWorkerSelect();
+    renderEntries();
+}
 
-    // Build team options
-    const teamOptions = teamsList.map(t =>
-        `<option value="${t}" ${t === currentTeam ? 'selected' : ''}>${t}</option>`
-    ).join('');
+function editEntry(index) {
+    const e = entries[index];
+    // Remove from the list so the worker becomes selectable again, then
+    // preload the entry form with its values for re-adding.
+    entries.splice(index, 1);
+    populateWorkerSelect();
+    renderEntries();
 
-    // Cards start normal, turn green with tick when marked
-    return `
-        <div class="worker-card ${isMarked ? 'marked' : ''}" data-worker-id="${worker.worker_id}">
-            <div class="worker-header">
-                <div>
-                    <h3 class="worker-name">${worker.name}</h3>
-                    <p class="worker-designation">${worker.designation || ''}</p>
-                </div>
-                <div class="status-buttons">
-                    <button class="status-btn P" data-status="P">P</button>
-                    <button class="status-btn A" data-status="A">A</button>
-                    <button class="status-btn H" data-status="H">H</button>
-                </div>
+    document.getElementById('entryWorker').value = e.worker_id;
+    document.getElementById('entryProject').value = projectsList.includes(e.project) ? e.project : '';
+    document.getElementById('entryOT').value = e.ot_hours;
+    entryStatus = e.status;
+    document.querySelectorAll('#entryStatusToggle .status-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.status === e.status);
+    });
+
+    document.querySelector('.mark-entry-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function resetEntryForm() {
+    document.getElementById('entryWorker').value = '';
+    document.getElementById('entryProject').value = '';
+    document.getElementById('entryOT').value = 0;
+    entryStatus = null;
+    document.querySelectorAll('#entryStatusToggle .status-btn').forEach(b => b.classList.remove('active'));
+}
+
+function renderEntries() {
+    const list = document.getElementById('markedList');
+    const count = document.getElementById('markedCount');
+    count.textContent = `(${entries.length})`;
+
+    if (entries.length === 0) {
+        list.innerHTML = '<div class="empty-state">No workers added yet. Choose a worker above and click Add.</div>';
+        return;
+    }
+
+    list.innerHTML = entries.map((e, i) => `
+        <div class="marked-row">
+            <div class="mr-main">
+                <span class="mr-name">${escapeHtml(e.name)}</span>
+                <span class="mr-role">${escapeHtml(e.designation || '—')}</span>
             </div>
-            <div class="worker-controls">
-                <div class="input-group">
-                    <label>Team</label>
-                    <select class="team-select">
-                        <option value="">-- Select --</option>
-                        ${teamOptions}
-                        <option value="__new__">+ Add New Team</option>
-                    </select>
-                </div>
-                <div class="input-group">
-                    <label>OT Hours</label>
-                    <input type="number" min="0" max="8" step="0.5" value="${att.ot_hours}" class="ot-input">
-                </div>
-                <div class="input-group project-group">
-                    <label>Project</label>
-                    <select class="project-select">
-                        <option value="">-- Select --</option>
-                        ${projectsList.map(p =>
-                            `<option value="${p}" ${p === att.project ? 'selected' : ''}>${p}</option>`
-                        ).join('')}
-                        <option value="__new__">+ Add New Project</option>
-                    </select>
-                </div>
+            <div class="mr-meta">
+                <span class="mr-project" title="Project">${e.project ? escapeHtml(e.project) : 'No project'}</span>
+                <span class="status-pill ${e.status}">${e.status === 'P' ? 'Present' : 'Absent'}</span>
+                <span class="mr-ot">${e.ot_hours > 0 ? '+' + e.ot_hours + ' OT' : 'No OT'}</span>
+            </div>
+            <div class="mr-actions">
+                <button class="mr-edit" type="button" onclick="editEntry(${i})">Edit</button>
+                <button class="mr-remove" type="button" onclick="removeEntry(${i})" title="Remove">&times;</button>
             </div>
         </div>
-    `;
+    `).join('');
 }
 
-function attachCardListeners() {
-    document.querySelectorAll('.status-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const card = this.closest('.worker-card');
-            const workerId = parseInt(card.dataset.workerId);
-            const status = this.dataset.status;
+// ============================================
+// COMMIT
+// ============================================
 
-            card.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
+async function finishAttendance() {
+    if (!selectedSupervisorId) { showMessage('Select a supervisor first.', 'error'); return; }
 
-            attendanceData[workerId].status = status;
-
-            // Mark this worker as done
-            if (!markedWorkers.has(workerId)) {
-                markedWorkers.add(workerId);
-                markCardAsComplete(card);
-                updateProgressCounter();
-            }
-        });
-    });
-
-    document.querySelectorAll('.ot-input').forEach(input => {
-        input.addEventListener('change', function() {
-            const card = this.closest('.worker-card');
-            const workerId = parseInt(card.dataset.workerId);
-            let value = parseFloat(this.value) || 0;
-            value = Math.min(8, Math.max(0, value));
-            this.value = value;
-            attendanceData[workerId].ot_hours = value;
-        });
-    });
-
-    document.querySelectorAll('.project-select').forEach(select => {
-        select.addEventListener('change', function() {
-            const card = this.closest('.worker-card');
-            const workerId = parseInt(card.dataset.workerId);
-
-            if (this.value === '__new__') {
-                const newProject = prompt('Enter new project name:');
-                if (newProject && newProject.trim()) {
-                    const trimmed = newProject.trim();
-                    if (!projectsList.includes(trimmed)) {
-                        projectsList.push(trimmed);
-                    }
-                    attendanceData[workerId].project = trimmed;
-                    // Refresh the cards to update all dropdowns
-                    loadAttendance();
-                } else {
-                    this.value = attendanceData[workerId].project || '';
-                }
-            } else {
-                attendanceData[workerId].project = this.value;
-            }
-        });
-    });
-
-    document.querySelectorAll('.team-select').forEach(select => {
-        select.addEventListener('change', function() {
-            const card = this.closest('.worker-card');
-            const workerId = parseInt(card.dataset.workerId);
-
-            if (this.value === '__new__') {
-                const newTeam = prompt('Enter new team name:');
-                if (newTeam && newTeam.trim()) {
-                    const trimmed = newTeam.trim();
-                    if (!teamsList.includes(trimmed)) {
-                        teamsList.push(trimmed);
-                    }
-                    workerTeams[workerId] = trimmed;
-                    // Refresh the cards to update all dropdowns
-                    loadAttendance();
-                } else {
-                    this.value = workerTeams[workerId] || '';
-                }
-            } else {
-                workerTeams[workerId] = this.value;
-            }
-        });
-    });
-}
-
-function updateTeamsDatalist() {
-    // Update the modal datalist
-    const modalDatalist = document.getElementById('teamsList');
-    if (modalDatalist) {
-        modalDatalist.innerHTML = teamsList.map(t => `<option value="${t}">`).join('');
-    }
-}
-
-async function saveAllAttendance() {
-    const btn = document.getElementById('saveBtn');
-    const originalContent = btn.innerHTML;
+    const btn = document.getElementById('finishBtn');
+    const original = btn.textContent;
     btn.disabled = true;
-    btn.innerHTML = '<span class="saving-spinner"></span>';
+    btn.textContent = 'Saving...';
     hideMessage();
 
-    const date = document.getElementById('dateInput').value;
-    const records = Object.values(attendanceData).map(att => ({
-        worker_id: att.worker_id,
-        date: date,
-        status: att.status,
-        ot_hours: att.ot_hours,
-        project: att.project || null,
-        team: workerTeams[att.worker_id] || null  // Include team in the request
-    }));
-
     try {
-        const response = await fetch('/api/attendance', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(records)
-        });
-
-        if (!response.ok) throw new Error('Failed to save');
-
-        showMessage('Attendance saved successfully!', 'success');
-
-        // Reset summary cache so it reloads fresh data
-        if (typeof summaryLoaded !== 'undefined') {
-            window.summaryLoaded = false;
+        // Delete records this supervisor had saved earlier but removed from the list.
+        const currentIds = new Set(entries.map(e => e.worker_id));
+        const toDelete = [...initialPersistedIds].filter(id => !currentIds.has(id));
+        for (const wid of toDelete) {
+            await fetch(`/api/attendance/${wid}/${todayStr}`, { method: 'DELETE' });
         }
 
-        // Reload projects and teams list in case new ones were added
-        await loadProjectsAndTeams();
+        // Upsert everything currently in the list.
+        if (entries.length > 0) {
+            const records = entries.map(e => ({
+                worker_id: e.worker_id,
+                date: todayStr,
+                status: e.status,
+                ot_hours: e.ot_hours,
+                project: e.project || null,
+                supervisor_id: selectedSupervisorId
+            }));
+            const res = await fetch('/api/attendance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(records)
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to save');
+            }
+        }
 
-    } catch (error) {
-        showMessage('Failed to save attendance.', 'error');
-        console.error(error);
+        showMessage(`Attendance updated for ${entries.length} worker(s).`, 'success');
+        window.summaryLoaded = false;
+
+        await loadProjects();  // pick up any newly created project
+        await loadRoster();    // re-sync persisted state for this supervisor
+    } catch (e) {
+        showMessage(e.message || 'Failed to update attendance.', 'error');
+        console.error(e);
     } finally {
         btn.disabled = false;
-        btn.innerHTML = originalContent;
+        btn.textContent = original;
     }
 }
+
+// ============================================
+// ADD SUPERVISOR
+// ============================================
+
+function openSupervisorModal() {
+    document.getElementById('supervisorModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('newSupervisorName').focus(), 50);
+}
+
+function closeSupervisorModal() {
+    document.getElementById('supervisorModal').style.display = 'none';
+}
+
+async function addSupervisor(e) {
+    e.preventDefault();
+    const name = document.getElementById('newSupervisorName').value.trim();
+    if (!name) return;
+
+    try {
+        const res = await fetch('/api/supervisors', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+
+        if (!res.ok && res.status !== 409) {
+            throw new Error(data.error || 'Failed to add supervisor');
+        }
+
+        await loadSupervisors();
+        // Select the new (or existing) supervisor.
+        const match = supervisors.find(s => s.name.toLowerCase() === name.toLowerCase());
+        if (match) {
+            document.getElementById('supervisorSelect').value = match.id;
+            await onSupervisorChange();
+        }
+
+        closeSupervisorModal();
+        document.getElementById('supervisorForm').reset();
+    } catch (err) {
+        alert(err.message || 'Error adding supervisor');
+        console.error(err);
+    }
+}
+
+// ============================================
+// ADD LABOUR (worker)
+// ============================================
 
 async function addNewLabour(e) {
     e.preventDefault();
@@ -331,14 +428,11 @@ async function addNewLabour(e) {
         closeAddModal();
         document.getElementById('addLabourForm').reset();
 
-        // Reload teams if new team was added
-        if (team && !teamsList.includes(team)) {
-            await loadProjectsAndTeams();
-        }
+        await loadWorkers();
+        await loadTeamsDatalist();
+        if (selectedSupervisorId) populateWorkerSelect();
 
-        loadAttendance();
         showMessage(`Labour "${name}" added successfully!`, 'success');
-
     } catch (error) {
         alert('Error adding labour');
         console.error(error);
@@ -349,9 +443,13 @@ function closeAddModal() {
     document.getElementById('addModal').style.display = 'none';
 }
 
-document.getElementById('addModal')?.addEventListener('click', function(e) {
+document.getElementById('addModal')?.addEventListener('click', function (e) {
     if (e.target === this) closeAddModal();
 });
+
+// ============================================
+// MESSAGES
+// ============================================
 
 function showMessage(text, type) {
     const msg = document.getElementById('message');
@@ -363,35 +461,4 @@ function showMessage(text, type) {
 function hideMessage() {
     const msg = document.getElementById('message');
     if (msg) msg.style.display = 'none';
-}
-
-function markCardAsComplete(card) {
-    card.classList.add('marked');
-
-    // Add the green tick at bottom right if not already present
-    if (!card.querySelector('.marked-indicator')) {
-        const indicator = document.createElement('div');
-        indicator.className = 'marked-indicator';
-        indicator.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
-        card.appendChild(indicator);
-    }
-}
-
-function updateProgressCounter() {
-    const counter = document.getElementById('progressCounter');
-    if (counter) {
-        const marked = markedWorkers.size;
-
-        if (totalWorkers === 0 || marked === 0) {
-            // Hide counter until first mark is made
-            counter.textContent = '';
-            counter.className = 'progress-counter';
-        } else if (marked === totalWorkers) {
-            counter.textContent = `${marked}/${totalWorkers}`;
-            counter.className = 'progress-counter complete';
-        } else {
-            counter.textContent = `${marked}/${totalWorkers}`;
-            counter.className = 'progress-counter pending';
-        }
-    }
 }

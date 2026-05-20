@@ -40,6 +40,20 @@ class Salary(db.Model):
         }
 
 
+class Supervisor(db.Model):
+    """Supervisors who mark attendance. Workers are not fixed to a supervisor."""
+    __tablename__ = 'supervisor'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name
+        }
+
+
 class Attendance(db.Model):
     """Attendance records - daily attendance linked to worker."""
     __tablename__ = 'attendance'
@@ -47,9 +61,11 @@ class Attendance(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     worker_id = db.Column(db.Integer, nullable=False)
     date = db.Column(db.Date, nullable=False)
+    # 'H' is retained for legacy data; new marking only uses 'P'/'A'.
     status = db.Column(db.Enum('P', 'A', 'H', name='attendance_status'), default='A')
     ot_hours = db.Column(db.Numeric(4, 2), default=0)
     project = db.Column(db.String(100))
+    supervisor_id = db.Column(db.Integer)  # who marked it (nullable for legacy records)
 
     __table_args__ = (
         db.UniqueConstraint('worker_id', 'date', name='unique_daily_attendance'),
@@ -62,5 +78,6 @@ class Attendance(db.Model):
             'date': self.date.isoformat() if self.date else None,
             'status': self.status,
             'ot_hours': float(self.ot_hours) if self.ot_hours else 0,
-            'project': self.project
+            'project': self.project,
+            'supervisor_id': self.supervisor_id
         }

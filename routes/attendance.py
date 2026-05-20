@@ -1,9 +1,102 @@
 from flask import Blueprint, request, jsonify
-from models import db, Attendance, Salary
+from models import db, Attendance, Salary, Supervisor
 from datetime import datetime
 from sqlalchemy import func, case
 
 attendance_bp = Blueprint('attendance', __name__)
+
+
+def _worker_info_map(worker_ids):
+    """Return {worker_id: latest Salary record} for the given worker ids."""
+    if not worker_ids:
+        return {}
+    subquery = db.session.query(
+        Salary.worker_id,
+        func.max(Salary.year * 100 + Salary.month).label('max_period')
+    ).filter(Salary.worker_id.in_(worker_ids)).group_by(Salary.worker_id).subquery()
+
+    workers = db.session.query(Salary).join(
+        subquery,
+        (Salary.worker_id == subquery.c.worker_id) &
+        (Salary.year * 100 + Salary.month == subquery.c.max_period)
+    ).all()
+    return {w.worker_id: w for w in workers}
+
+
+def _is_today(date_str):
+    """True if date_str (YYYY-MM-DD) is the current local date."""
+    try:
+        return datetime.strptime(date_str, '%Y-%m-%d').date() == datetime.now().date()
+    except (ValueError, TypeError):
+        return False
+
+
+@attendance_bp.route('/api/supervisors', methods=['GET'])
+def get_supervisors():
+    """List all supervisors."""
+    supervisors = Supervisor.query.order_by(Supervisor.name).all()
+    return jsonify([s.to_dict() for s in supervisors])
+
+
+@attendance_bp.route('/api/supervisors', methods=['POST'])
+def add_supervisor():
+    """Add a new supervisor."""
+    data = request.get_json() or {}
+    name = (data.get('name') or '').strip()
+
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+
+    existing = Supervisor.query.filter(func.lower(Supervisor.name) == name.lower()).first()
+    if existing:
+        return jsonify({'error': 'Supervisor already exists', 'supervisor': existing.to_dict()}), 409
+
+    supervisor = Supervisor(name=name)
+    db.session.add(supervisor)
+    db.session.commit()
+    return jsonify(supervisor.to_dict()), 201
+
+
+@attendance_bp.route('/api/attendance/day-roster/<date_str>', methods=['GET'])
+def get_day_roster(date_str):
+    """Roster for the Mark Attendance flow.
+
+    Returns the workers a given supervisor has already marked on this date,
+    plus every worker_id marked by anyone (so the UI can hide them from the
+    "add worker" dropdown and prevent double-assignment).
+    """
+    try:
+        roster_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+    supervisor_id = request.args.get('supervisor_id', type=int)
+
+    records = Attendance.query.filter_by(date=roster_date).all()
+    marked_worker_ids = [r.worker_id for r in records]
+
+    marked_by_supervisor = []
+    if supervisor_id is not None:
+        sup_records = [r for r in records if r.supervisor_id == supervisor_id]
+        info = _worker_info_map([r.worker_id for r in sup_records])
+        for r in sup_records:
+            w = info.get(r.worker_id)
+            marked_by_supervisor.append({
+                'worker_id': r.worker_id,
+                'name': w.name if w else f'Worker {r.worker_id}',
+                'designation': w.designation if w else '',
+                'team': w.team if w else '',
+                'status': r.status,
+                'ot_hours': float(r.ot_hours) if r.ot_hours else 0,
+                'project': r.project or ''
+            })
+        marked_by_supervisor.sort(key=lambda x: x['name'])
+
+    return jsonify({
+        'date': date_str,
+        'marked_worker_ids': marked_worker_ids,
+        'marked_by_supervisor': marked_by_supervisor
+    })
 
 
 @attendance_bp.route('/api/labours', methods=['GET'])
@@ -106,8 +199,20 @@ def get_attendance_by_date(date_str):
 
 @attendance_bp.route('/api/attendance', methods=['POST'])
 def mark_attendance():
-    """Mark or update attendance (supports bulk)."""
+    """Mark or update attendance (supports bulk).
+
+    Enforces that attendance can only be created or edited for the current
+    day, so a past day's records can never be modified after the fact.
+    """
     data = request.get_json()
+
+    # Guard: every record must be dated today
+    records_to_check = data if isinstance(data, list) else [data]
+    for rec in records_to_check:
+        if not isinstance(rec, dict) or not _is_today(rec.get('date')):
+            return jsonify({
+                'error': 'Attendance can only be marked or edited for the current day.'
+            }), 403
 
     if isinstance(data, list):
         results = []
@@ -144,6 +249,28 @@ def mark_attendance():
     return jsonify(result), 201
 
 
+@attendance_bp.route('/api/attendance/<int:worker_id>/<date_str>', methods=['DELETE'])
+def delete_attendance(worker_id, date_str):
+    """Remove a worker's attendance for a date (current day only)."""
+    try:
+        record_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+    if record_date != datetime.now().date():
+        return jsonify({'error': 'Attendance can only be edited for the current day.'}), 403
+
+    record = Attendance.query.filter_by(worker_id=worker_id, date=record_date).first()
+    if not record:
+        return jsonify({'error': 'Record not found'}), 404
+
+    db.session.delete(record)
+    db.session.commit()
+    _recalculate_monthly_salaries({(worker_id, record_date.year, record_date.month)})
+
+    return jsonify({'message': 'Attendance removed', 'worker_id': worker_id, 'date': date_str})
+
+
 def _upsert_attendance(data):
     """Insert or update a single attendance record."""
     worker_id = data.get('worker_id')
@@ -166,13 +293,16 @@ def _upsert_attendance(data):
             attendance.ot_hours = data['ot_hours']
         if 'project' in data:
             attendance.project = data['project']
+        if 'supervisor_id' in data:
+            attendance.supervisor_id = data['supervisor_id']
     else:
         attendance = Attendance(
             worker_id=worker_id,
             date=record_date,
             status=data.get('status', 'A'),
             ot_hours=data.get('ot_hours', 0),
-            project=data.get('project')
+            project=data.get('project'),
+            supervisor_id=data.get('supervisor_id')
         )
         db.session.add(attendance)
 
