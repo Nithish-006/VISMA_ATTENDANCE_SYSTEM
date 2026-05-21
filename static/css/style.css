@@ -662,6 +662,11 @@ body {
     background: rgba(255, 255, 255, 0.5);
 }
 
+/* Short tab labels are mobile-only (revealed in the mobile media query) */
+.tab-label-short {
+    display: none;
+}
+
 .control-group {
     display: flex;
     align-items: center;
@@ -3061,12 +3066,105 @@ select.edit-input {
         height: 40px;
     }
 
-    /* Tab labels: shrink slightly and allow graceful wrapping */
+    /* Tabs: use the short labels so all three fit cleanly on one line */
+    .tab-label-full {
+        display: none;
+    }
+
+    .tab-label-short {
+        display: inline;
+    }
+
+    .tab-switcher {
+        width: 100%;
+    }
+
     .tab-btn {
-        padding: 9px 6px;
-        font-size: 0.8125rem;
-        white-space: normal;
-        line-height: 1.15;
+        padding: 11px 8px;
+        font-size: 0.875rem;
+        white-space: nowrap;
+        min-width: 0;
+    }
+
+    /* Stop selects/inputs from forcing the page wider than the screen */
+    .select-input,
+    .date-input,
+    .ot-input,
+    .edit-input {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    /* --- Supervisor bar: label on its own line, select + New share a row --- */
+    .sup-select-group {
+        gap: 8px;
+    }
+
+    .sup-select-group label {
+        width: 100%;
+    }
+
+    .sup-select-group .select-input {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sup-select-group .btn {
+        flex-shrink: 0;
+    }
+
+    /* --- Mark entry card: easy stacked form (no overflow) --- */
+    .mark-entry-card {
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        padding: 16px;
+    }
+
+    /* Grid children must be allowed to shrink, or long option
+       text pushes the column (and the page) past the viewport. */
+    .entry-field {
+        min-width: 0;
+    }
+
+    /* Worker & Project get a full row each; Status + OT share a row */
+    .entry-worker,
+    .entry-project,
+    .entry-action {
+        grid-column: 1 / -1;
+    }
+
+    .entry-field .ot-input {
+        width: 100%;
+    }
+
+    .entry-action .btn {
+        width: 100%;
+        height: 48px;
+        font-size: 1rem;
+    }
+
+    .status-buttons {
+        gap: 10px;
+    }
+
+    .status-btn {
+        flex: 1;
+    }
+
+    /* Marked-worker rows: keep everything inside the card */
+    .marked-row {
+        flex-wrap: wrap;
+        gap: 10px 12px;
+        padding: 12px 14px;
+    }
+
+    .mr-main {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .mr-project {
+        max-width: 100%;
     }
 
     /* --- Read-only tables become stacked cards --- */
