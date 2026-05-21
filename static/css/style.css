@@ -3021,3 +3021,265 @@ select.edit-input {
         width: 100%;
     }
 }
+
+/* ============================================
+   MOBILE OPTIMIZATION (phones & small tablets)
+   Consolidated rules — placed last so they win
+   over earlier responsive declarations.
+   ============================================ */
+@media (max-width: 768px) {
+    /* Never let anything push the page sideways */
+    html, body {
+        overflow-x: hidden;
+    }
+
+    /* Roomier use of the narrow viewport */
+    .main-content {
+        padding: 20px 14px;
+    }
+
+    .page-header {
+        padding: 0 14px;
+    }
+
+    /* Prevent iOS Safari from auto-zooming when a field is focused
+       (any input < 16px triggers the zoom). Keep the small date-pill out. */
+    .select-input,
+    .date-input:not(.quick-date-picker),
+    .ot-input,
+    .edit-input,
+    .summary-filters .filter-group .date-input,
+    .summary-filters .filter-group .select-input,
+    .form-group input,
+    .form-group select,
+    #newSupervisorName {
+        font-size: 16px;
+    }
+
+    /* Comfortable tap targets */
+    .btn-sm {
+        height: 40px;
+    }
+
+    /* Tab labels: shrink slightly and allow graceful wrapping */
+    .tab-btn {
+        padding: 9px 6px;
+        font-size: 0.8125rem;
+        white-space: normal;
+        line-height: 1.15;
+    }
+
+    /* --- Read-only tables become stacked cards --- */
+    .worker-summary-table-wrap,
+    .daily-breakdown-table-wrap {
+        overflow-x: visible;
+        border: none;
+        background: transparent;
+    }
+
+    .worker-summary-table,
+    .daily-breakdown-table {
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .worker-summary-table thead,
+    .daily-breakdown-table thead {
+        display: none;
+    }
+
+    .worker-summary-table tr,
+    .daily-breakdown-table tr {
+        display: block;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-sm);
+        overflow: hidden;
+        margin-bottom: 12px;
+    }
+
+    .worker-summary-table tr:hover td,
+    .daily-breakdown-table tr:hover td {
+        background: transparent;
+    }
+
+    .worker-summary-table td,
+    .daily-breakdown-table td {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        text-align: right;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border-light);
+        white-space: normal;
+    }
+
+    .worker-summary-table tr td:last-child,
+    .daily-breakdown-table tr td:last-child {
+        border-bottom: none;
+    }
+
+    /* The data-label drives the row caption on the left */
+    .worker-summary-table td::before,
+    .daily-breakdown-table td::before {
+        content: attr(data-label);
+        flex-shrink: 0;
+        font-weight: 700;
+        font-size: 0.6875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-tertiary);
+        text-align: left;
+    }
+
+    /* First cell acts as a card title bar */
+    .worker-summary-table td:first-child,
+    .daily-breakdown-table td:first-child {
+        justify-content: flex-start;
+        text-align: left;
+        font-weight: 700;
+        font-size: 0.9375rem;
+        color: var(--text-primary);
+        background: var(--gradient-subtle);
+    }
+
+    .worker-summary-table td:first-child::before,
+    .daily-breakdown-table td:first-child::before {
+        display: none;
+    }
+
+    /* --- Edit table becomes a stacked form card --- */
+    .edit-table-wrap {
+        overflow-x: visible;
+        border: none;
+        background: transparent;
+    }
+
+    .edit-table {
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .edit-table thead {
+        display: none;
+    }
+
+    .edit-table tr {
+        display: block;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-sm);
+        margin-bottom: 14px;
+        padding: 10px 14px 14px;
+    }
+
+    .edit-table tr:hover td {
+        background: transparent;
+    }
+
+    .edit-table td {
+        display: block;
+        padding: 8px 0;
+        border-bottom: none;
+    }
+
+    .edit-table td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 700;
+        font-size: 0.6875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-tertiary);
+    }
+
+    .edit-table td.id-cell {
+        width: auto;
+        font-size: 0.8125rem;
+        color: var(--text-tertiary);
+        padding-top: 0;
+    }
+
+    .edit-input,
+    .edit-input[type="number"] {
+        width: 100%;
+        height: 44px;
+    }
+
+    /* Actions row: full-width buttons side by side */
+    .edit-table td.edit-actions-cell {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding-top: 12px;
+        margin-top: 4px;
+        border-top: 1px solid var(--border-light);
+    }
+
+    .edit-table td.edit-actions-cell::before {
+        display: none;
+    }
+
+    .edit-save-btn,
+    .edit-delete-btn {
+        flex: 1;
+        height: 44px;
+        margin-left: 0;
+    }
+
+    .edit-status {
+        flex-basis: 100%;
+        margin-left: 0;
+        text-align: center;
+    }
+
+    /* --- Modals use more of the small screen --- */
+    .modal {
+        padding: 10px;
+        align-items: flex-end;
+    }
+
+    .modal-content {
+        max-height: calc(100dvh - 20px);
+        border-radius: var(--radius-lg);
+    }
+
+    .modal-header {
+        padding: 16px 18px;
+    }
+
+    .modal-header h2 {
+        font-size: 1.125rem;
+    }
+
+    .modal-body {
+        padding: 18px;
+    }
+
+    .worker-info-bar {
+        gap: 8px;
+        margin-bottom: 18px;
+        padding-bottom: 16px;
+    }
+}
+
+/* Extra-small phones */
+@media (max-width: 400px) {
+    .tab-btn {
+        padding: 8px 4px;
+        font-size: 0.75rem;
+    }
+
+    .summary-stat-value {
+        font-size: 1.375rem;
+    }
+
+    .mark-entry-card {
+        padding: 16px;
+        gap: 12px;
+    }
+}

@@ -225,11 +225,11 @@ async function loadSalarySummary() {
                         <tbody>
                             ${data.daily_breakdown.map(d => `
                                 <tr>
-                                    <td>${formatDate(d.date)}</td>
-                                    <td class="right"><span class="stat-badge-sm present">${d.present}</span></td>
-                                    <td class="right"><span class="stat-badge-sm absent">${d.absent}</span></td>
-                                    <td class="right"><span class="stat-badge-sm holiday">${d.holiday}</span></td>
-                                    <td class="right">${d.ot_hours}</td>
+                                    <td data-label="Date">${formatDate(d.date)}</td>
+                                    <td class="right" data-label="Present"><span class="stat-badge-sm present">${d.present}</span></td>
+                                    <td class="right" data-label="Absent"><span class="stat-badge-sm absent">${d.absent}</span></td>
+                                    <td class="right" data-label="Holiday"><span class="stat-badge-sm holiday">${d.holiday}</span></td>
+                                    <td class="right" data-label="OT Hours">${d.ot_hours}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -258,13 +258,13 @@ async function loadSalarySummary() {
                         <tbody>
                             ${data.workers.map(w => `
                                 <tr class="worker-row" data-worker-id="${w.worker_id}" data-worker-name="${w.name}" style="cursor:pointer;">
-                                    <td class="worker-name">${w.name}</td>
-                                    <td>${w.team || '-'}</td>
-                                    <td class="right"><span class="stat-badge-sm present">${w.present_days}</span></td>
-                                    <td class="right"><span class="stat-badge-sm absent">${w.absent_days}</span></td>
-                                    <td class="right">${w.ot_hours}</td>
-                                    <td class="right total-cell">${formatCurrency(w.salary || 0)}</td>
-                                    <td>${w.projects.join(', ') || '-'}</td>
+                                    <td class="worker-name" data-label="Name">${w.name}</td>
+                                    <td data-label="Team">${w.team || '-'}</td>
+                                    <td class="right" data-label="Present"><span class="stat-badge-sm present">${w.present_days}</span></td>
+                                    <td class="right" data-label="Absent"><span class="stat-badge-sm absent">${w.absent_days}</span></td>
+                                    <td class="right" data-label="OT Hours">${w.ot_hours}</td>
+                                    <td class="right total-cell" data-label="Salary">${formatCurrency(w.salary || 0)}</td>
+                                    <td data-label="Projects">${w.projects.join(', ') || '-'}</td>
                                 </tr>
                             `).join('')}
                         </tbody>

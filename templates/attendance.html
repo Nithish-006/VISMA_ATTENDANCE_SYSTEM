@@ -586,11 +586,11 @@ function renderSummaryDashboard(data) {
                     <tbody>
                         ${data.daily_breakdown.map(d => `
                             <tr>
-                                <td>${formatDate(d.date)}</td>
-                                <td class="right"><span class="stat-badge-sm present">${d.present}</span></td>
-                                <td class="right"><span class="stat-badge-sm absent">${d.absent}</span></td>
-                                <td class="right"><span class="stat-badge-sm holiday">${d.holiday}</span></td>
-                                <td class="right">${d.ot_hours}</td>
+                                <td data-label="Date">${formatDate(d.date)}</td>
+                                <td class="right" data-label="Present"><span class="stat-badge-sm present">${d.present}</span></td>
+                                <td class="right" data-label="Absent"><span class="stat-badge-sm absent">${d.absent}</span></td>
+                                <td class="right" data-label="Holiday"><span class="stat-badge-sm holiday">${d.holiday}</span></td>
+                                <td class="right" data-label="OT Hours">${d.ot_hours}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -618,12 +618,12 @@ function renderSummaryDashboard(data) {
                     <tbody>
                         ${data.workers.map(w => `
                             <tr>
-                                <td class="worker-name">${w.name}</td>
-                                <td>${w.team || '-'}</td>
-                                <td class="right"><span class="stat-badge-sm present">${w.present_days}</span></td>
-                                <td class="right"><span class="stat-badge-sm absent">${w.absent_days}</span></td>
-                                <td class="right">${w.ot_hours}</td>
-                                <td>${w.projects.join(', ') || '-'}</td>
+                                <td class="worker-name" data-label="Name">${w.name}</td>
+                                <td data-label="Team">${w.team || '-'}</td>
+                                <td class="right" data-label="Present"><span class="stat-badge-sm present">${w.present_days}</span></td>
+                                <td class="right" data-label="Absent"><span class="stat-badge-sm absent">${w.absent_days}</span></td>
+                                <td class="right" data-label="OT Hours">${w.ot_hours}</td>
+                                <td data-label="Projects">${w.projects.join(', ') || '-'}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -733,9 +733,9 @@ async function loadEditDetails() {
                             <tbody>
                                 ${members.map(l => `
                                     <tr data-worker-id="${l.worker_id}" id="editRow_${l.worker_id}">
-                                        <td class="id-cell">${l.worker_id}</td>
-                                        <td><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" oninput="markEditChanged(this)"></td>
-                                        <td>
+                                        <td class="id-cell" data-label="ID">${l.worker_id}</td>
+                                        <td data-label="Name"><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" oninput="markEditChanged(this)"></td>
+                                        <td data-label="Designation">
                                             <select class="edit-input edit-designation" data-original="${l.designation || ''}" onchange="markEditChanged(this)">
                                                 <option value="">--</option>
                                                 <option value="FITTER" ${l.designation === 'FITTER' ? 'selected' : ''}>FITTER</option>
@@ -744,9 +744,9 @@ async function loadEditDetails() {
                                                 <option value="RIGGER" ${l.designation === 'RIGGER' ? 'selected' : ''}>RIGGER</option>
                                             </select>
                                         </td>
-                                        <td><input type="text" class="edit-input edit-team" list="editTeamsList" value="${escapeHtml(l.team || '')}" data-original="${escapeHtml(l.team || '')}" oninput="markEditChanged(this)"></td>
-                                        <td><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
-                                        <td style="white-space: nowrap;">
+                                        <td data-label="Team"><input type="text" class="edit-input edit-team" list="editTeamsList" value="${escapeHtml(l.team || '')}" data-original="${escapeHtml(l.team || '')}" oninput="markEditChanged(this)"></td>
+                                        <td data-label="Base Pay/Day"><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
+                                        <td class="edit-actions-cell" style="white-space: nowrap;">
                                             <button class="edit-save-btn" onclick="saveWorkerDetails(${l.worker_id})">Save</button>
                                             <button class="edit-delete-btn" onclick="deleteWorker(${l.worker_id}, '${escapeHtml(l.name)}')">Delete</button>
                                             <span class="edit-status" id="editStatus_${l.worker_id}"></span>
