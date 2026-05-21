@@ -30,6 +30,33 @@ def run_migrations(app):
             app.logger.error(f"Migration failed: {e}")
 
 
+DEFAULT_SUPERVISORS = ['AMBETHRAJ', 'KEDHAR', 'RAJU', 'VISMA']
+
+
+def seed_supervisors(app):
+    """Ensure the default supervisors exist so the Mark-attendance dropdown is
+    never empty. Idempotent: only inserts names not already present
+    (case-insensitive), so it's safe on every startup and fresh deployments.
+    """
+    from models import Supervisor
+    from sqlalchemy import func
+
+    with app.app_context():
+        try:
+            existing = {s.name.lower() for s in Supervisor.query.all()}
+            added = False
+            for name in DEFAULT_SUPERVISORS:
+                if name.lower() not in existing:
+                    db.session.add(Supervisor(name=name))
+                    added = True
+            if added:
+                db.session.commit()
+                app.logger.info("Seeded default supervisors")
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Supervisor seeding failed: {e}")
+
+
 def auto_init_database(app):
     """Auto-initialize database with data if empty (for Railway deployment)."""
     from models import Salary, Attendance
@@ -82,6 +109,9 @@ def create_app(config_name=None):
 
     # Apply incremental schema migrations (e.g. attendance.supervisor_id)
     run_migrations(app)
+
+    # Ensure the default supervisors exist (populates the Mark dropdown)
+    seed_supervisors(app)
 
     # Auto-initialize if database is empty (Railway deployment)
     if os.environ.get('FLASK_ENV') == 'production':
