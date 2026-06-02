@@ -2,22 +2,26 @@
 //
 // Flow: pick a supervisor -> add workers one at a time (worker + project +
 // P/A + OT) -> they collect in a list -> Finish Attendance commits everything.
-// Marking is locked to today; the backend rejects any other date.
+// Marking targets today by default, with a one-day buffer (Today/Yesterday
+// toggle) so late-reported OT can be recorded; the backend rejects older dates.
 
 let supervisors = [];
 let selectedSupervisorId = null;
 let allWorkers = [];                  // from /api/labours
 let projectsList = [];
-let markedWorkerIds = new Set();      // workers marked today by ANY supervisor
-let initialPersistedIds = new Set();  // workers this supervisor already had saved today
+let markedWorkerIds = new Set();      // workers marked on the selected day by ANY supervisor
+let initialPersistedIds = new Set();  // workers this supervisor already had saved for the selected day
 let entries = [];                     // working list: {worker_id, name, designation, project, status, ot_hours}
 let entryStatus = null;               // 'P' | 'A' currently chosen in the entry form
-let todayStr = '';
+let markDateStr = '';                 // the day being marked (today or yesterday)
 
 document.addEventListener('DOMContentLoaded', async function () {
-    todayStr = new Date().toISOString().split('T')[0];
-    const dateLabel = document.getElementById('markDateLabel');
-    if (dateLabel) dateLabel.textContent = formatTodayLabel();
+    markDateStr = isoForDaysAgo(0);
+    updateMarkDateLabel(0);
+
+    document.querySelectorAll('#markDayToggle .day-btn').forEach(btn => {
+        btn.addEventListener('click', () => onMarkDayChange(btn));
+    });
 
     await Promise.all([loadSupervisors(), loadWorkers(), loadProjects(), loadTeamsDatalist()]);
 
@@ -48,11 +52,37 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
 });
 
-function formatTodayLabel() {
+// Date string (YYYY-MM-DD) for `n` days ago, matching how the rest of the app
+// derives "today" so today/yesterday stay consistent with each other.
+function isoForDaysAgo(n) {
     const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().split('T')[0];
+}
+
+function updateMarkDateLabel(offset) {
+    const d = new Date();
+    d.setDate(d.getDate() - offset);
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    const prefix = offset === 0 ? 'Today' : 'Yesterday';
+    const label = document.getElementById('markDateLabel');
+    if (label) label.textContent = `${prefix} — ${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
+}
+
+async function onMarkDayChange(btn) {
+    document.querySelectorAll('#markDayToggle .day-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const offset = parseInt(btn.dataset.offset) || 0;
+    markDateStr = isoForDaysAgo(offset);
+    updateMarkDateLabel(offset);
+
+    // Re-sync the roster/entries for the newly selected day.
+    if (selectedSupervisorId) {
+        await loadRoster();
+        resetEntryForm();
+    }
 }
 
 // ============================================
@@ -133,7 +163,7 @@ async function onSupervisorChange() {
 
 async function loadRoster() {
     try {
-        const res = await fetch(`/api/attendance/day-roster/${todayStr}?supervisor_id=${selectedSupervisorId}`);
+        const res = await fetch(`/api/attendance/day-roster/${markDateStr}?supervisor_id=${selectedSupervisorId}`);
         const data = await res.json();
 
         markedWorkerIds = new Set(data.marked_worker_ids || []);
@@ -157,7 +187,7 @@ async function loadRoster() {
 
 function populateWorkerSelect() {
     const sel = document.getElementById('entryWorker');
-    // Exclude workers marked today by anyone, plus anyone already in the list.
+    // Exclude workers marked on the selected day by anyone, plus anyone already in the list.
     const excluded = new Set(markedWorkerIds);
     entries.forEach(e => excluded.add(e.worker_id));
 
@@ -306,14 +336,14 @@ async function finishAttendance() {
         const currentIds = new Set(entries.map(e => e.worker_id));
         const toDelete = [...initialPersistedIds].filter(id => !currentIds.has(id));
         for (const wid of toDelete) {
-            await fetch(`/api/attendance/${wid}/${todayStr}`, { method: 'DELETE' });
+            await fetch(`/api/attendance/${wid}/${markDateStr}`, { method: 'DELETE' });
         }
 
         // Upsert everything currently in the list.
         if (entries.length > 0) {
             const records = entries.map(e => ({
                 worker_id: e.worker_id,
-                date: todayStr,
+                date: markDateStr,
                 status: e.status,
                 ot_hours: e.ot_hours,
                 project: e.project || null,
