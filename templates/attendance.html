@@ -87,6 +87,23 @@
                                     <option value="RIGGER">RIGGER</option>
                                 </select>
                             </div>
+                            <div class="entry-field entry-work">
+                                <label>Work</label>
+                                <select id="entryWork" class="select-input">
+                                    <option value="">-- Select work --</option>
+                                    <option value="Fitup">Fitup</option>
+                                    <option value="Welding">Welding</option>
+                                    <option value="Saw Welding">Saw Welding</option>
+                                    <option value="Grinding">Grinding</option>
+                                    <option value="Buffing">Buffing</option>
+                                    <option value="Plasma Cutting">Plasma Cutting</option>
+                                    <option value="Drilling">Drilling</option>
+                                    <option value="Erection">Erection</option>
+                                    <option value="Painting">Painting</option>
+                                    <option value="Loading">Loading</option>
+                                    <option value="Unloading">Unloading</option>
+                                </select>
+                            </div>
                             <div class="entry-field entry-project">
                                 <label>Project</label>
                                 <!-- Searchable combobox: type to filter, click to pick.
@@ -130,49 +147,48 @@
             <!-- Panel 2: Summary -->
             <div id="panelSummary" class="panel">
                 <main class="main-content">
-                    <!-- Attendance Summary Section -->
-                    <div class="attendance-summary-section">
-                        <div class="quick-filters-container">
-                            <span class="quick-filters-label">Quick Filters:</span>
-                            <button class="btn btn-secondary btn-sm quick-filter-pill" onclick="setQuickFilter('today')">Today</button>
-                            <button class="btn btn-secondary btn-sm quick-filter-pill" onclick="setQuickFilter('yesterday')">Yesterday</button>
-                            <input type="date" id="quickDatePicker" class="date-input quick-date-picker" onchange="setQuickFilterDate(this.value)" placeholder="Pick a date" title="Pick a date">
-                        </div>
-                        <div class="summary-filters">
-                            <div class="filter-group">
-                                <label>From</label>
-                                <input type="date" id="summaryStartDate" class="date-input">
-                            </div>
-                            <div class="filter-group">
-                                <label>To</label>
-                                <input type="date" id="summaryEndDate" class="date-input">
-                            </div>
-                            <div class="filter-group">
-                                <label>Project</label>
-                                <select id="summaryProject" class="select-input">
-                                    <option value="">All Projects</option>
-                                </select>
-                            </div>
-                            <div class="filter-group">
-                                <label>Labour</label>
-                                <select id="summaryWorker" class="select-input">
-                                    <option value="">All Labours</option>
-                                </select>
-                            </div>
-                            <div class="filter-action">
-                                <button class="btn btn-primary" onclick="loadSummary()">Load</button>
-                                <button class="btn btn-secondary" onclick="resetSummaryFilters()">Reset</button>
-                            </div>
-                        </div>
-                        <div id="summaryDashboard" class="summary-dashboard">
-                            <div class="empty-state">Select a date range and click Load to view summary.</div>
-                        </div>
+                    <!-- Day / Period mode toggle -->
+                    <div class="summary-mode-toggle" id="summaryModeToggle">
+                        <button type="button" class="summary-mode-btn active" data-mode="day" onclick="setSummaryMode('day')">Day</button>
+                        <button type="button" class="summary-mode-btn" data-mode="period" onclick="setSummaryMode('period')">Period</button>
                     </div>
 
-                    <h2 class="section-heading">Individual Labours</h2>
-                    <div id="laboursContainer" class="labours-list">
-                        <div class="loading">Loading labours...</div>
-                    </div>
+                    <!-- DAY VIEW -->
+                    <section id="summaryDay" class="summary-view">
+                        <div class="day-chooser">
+                            <div class="day-quick-chips">
+                                <button type="button" class="quick-filter-pill day-chip active" data-day="today" onclick="setDay('today')">Today</button>
+                                <button type="button" class="quick-filter-pill day-chip" data-day="yesterday" onclick="setDay('yesterday')">Yesterday</button>
+                            </div>
+                            <input type="date" id="dayDatePicker" class="date-input quick-date-picker" onchange="setDay(this.value)" title="Pick a date">
+                        </div>
+
+                        <div id="daySummaryStrip" class="day-summary-strip"></div>
+                        <div id="dayActivity" class="day-activity">
+                            <div class="loading">Loading…</div>
+                        </div>
+                        <div id="dayAbsent" class="day-absent"></div>
+                    </section>
+
+                    <!-- PERIOD VIEW -->
+                    <section id="summaryPeriod" class="summary-view" style="display: none;">
+                        <div class="period-chooser">
+                            <div class="period-quick-chips">
+                                <button type="button" class="quick-filter-pill period-chip active" data-range="week" onclick="setPeriod('week')">This Week</button>
+                                <button type="button" class="quick-filter-pill period-chip" data-range="month" onclick="setPeriod('month')">This Month</button>
+                            </div>
+                            <div class="period-custom">
+                                <input type="date" id="periodStartDate" class="date-input quick-date-picker" title="From" onchange="setPeriod('custom')">
+                                <span class="period-dash">to</span>
+                                <input type="date" id="periodEndDate" class="date-input quick-date-picker" title="To" onchange="setPeriod('custom')">
+                            </div>
+                        </div>
+
+                        <div id="periodSummaryStrip" class="day-summary-strip"></div>
+                        <div id="periodBody">
+                            <div class="loading">Loading…</div>
+                        </div>
+                    </section>
                 </main>
             </div>
 
@@ -292,9 +308,9 @@ function showPanel(panel) {
         markControls.style.display = 'none';
 
         if (!window.summaryLoaded) {
-            loadLabours();
-            loadSummaryFilters();
-            loadSummary();
+            window.periodLoaded = false;
+            setSummaryMode('day');
+            setDay('today');
             window.summaryLoaded = true;
         }
     } else if (panel === 'edit') {
@@ -306,57 +322,6 @@ function showPanel(panel) {
             loadEditDetails();
             window.editLoaded = true;
         }
-    }
-}
-
-// Load labours for summary panel
-async function loadLabours() {
-    const container = document.getElementById('laboursContainer');
-
-    try {
-        const response = await fetch('/api/labours');
-        const labours = await response.json();
-
-        if (labours.length === 0) {
-            container.innerHTML = '<div class="empty-state">No labours found. Import data first.</div>';
-            return;
-        }
-
-        // Group by team
-        const teams = {};
-        labours.forEach(l => {
-            const team = l.team || 'Unassigned';
-            if (!teams[team]) teams[team] = [];
-            teams[team].push(l);
-        });
-
-        let html = '';
-        for (const [team, members] of Object.entries(teams)) {
-            html += `
-                <div class="team-section">
-                    <h2 class="team-title">${team} <span class="count">(${members.length})</span></h2>
-                    <div class="labour-cards">
-                        ${members.map(l => `
-                            <div class="labour-card" onclick="showHistory(${l.worker_id})">
-                                <div class="labour-info">
-                                    <h3 class="labour-name">${l.name}</h3>
-                                    <p class="labour-designation">${l.designation || 'N/A'}</p>
-                                </div>
-                                <div class="labour-meta">
-                                    <span class="last-attendance">Last: ${l.last_attendance || 'N/A'}</span>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        }
-
-        container.innerHTML = html;
-
-    } catch (error) {
-        container.innerHTML = '<div class="error">Error loading data. Is the server running?</div>';
-        console.error(error);
     }
 }
 
@@ -463,121 +428,226 @@ document.getElementById('historyModal').addEventListener('click', function(e) {
 });
 
 // ============================================
-// ATTENDANCE SUMMARY
+// ATTENDANCE SUMMARY  (Day + Period views)
 // ============================================
 
-// Set default date range (current week Mon-Sun)
-(function initSummaryDates() {
-    const today = new Date();
-    const day = today.getDay();
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
+let summaryMode = 'day';
 
-    document.getElementById('summaryStartDate').value = monday.toISOString().split('T')[0];
-    document.getElementById('summaryEndDate').value = sunday.toISOString().split('T')[0];
-})();
+function setSummaryMode(mode) {
+    summaryMode = mode;
+    document.querySelectorAll('#summaryModeToggle .summary-mode-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.mode === mode));
+    document.getElementById('summaryDay').style.display = mode === 'day' ? 'block' : 'none';
+    document.getElementById('summaryPeriod').style.display = mode === 'period' ? 'block' : 'none';
+    // Lazy-load the period view the first time it's opened.
+    if (mode === 'period' && !window.periodLoaded) {
+        setPeriod('week');
+        window.periodLoaded = true;
+    }
+}
 
-// Populate filter dropdowns when summary panel loads
-async function loadSummaryFilters() {
+// YYYY-MM-DD for `n` days ago — matches how the Mark flow derives dates
+// (attendance.js isoForDaysAgo), so "Today" here lines up with what was saved.
+function isoDaysAgo(n) {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().split('T')[0];
+}
+
+function round1(n) { return Math.round((n || 0) * 10) / 10; }
+
+// ---------- DAY VIEW ----------
+
+function setDay(which) {
+    let dateStr;
+    if (which === 'today') dateStr = isoDaysAgo(0);
+    else if (which === 'yesterday') dateStr = isoDaysAgo(1);
+    else dateStr = which;  // a value from the date picker
+    if (!dateStr) return;
+
+    const today = isoDaysAgo(0), yesterday = isoDaysAgo(1);
+    document.querySelectorAll('#summaryDay .day-chip').forEach(c => {
+        const v = c.dataset.day;
+        c.classList.toggle('active',
+            (v === 'today' && dateStr === today) || (v === 'yesterday' && dateStr === yesterday));
+    });
+    document.getElementById('dayDatePicker').value = dateStr;
+    loadDay(dateStr);
+}
+
+async function loadDay(dateStr) {
+    const activity = document.getElementById('dayActivity');
+    document.getElementById('daySummaryStrip').innerHTML = '';
+    document.getElementById('dayAbsent').innerHTML = '';
+    activity.innerHTML = '<div class="loading">Loading…</div>';
+
     try {
-        const [projectsRes, laboursRes] = await Promise.all([
-            fetch('/api/projects'),
-            fetch('/api/labours')
-        ]);
-        const projects = await projectsRes.json();
-        const labours = await laboursRes.json();
-
-        const projectSelect = document.getElementById('summaryProject');
-        projectSelect.innerHTML = '<option value="">All Projects</option>';
-        projects.forEach(p => {
-            projectSelect.innerHTML += `<option value="${p}">${p}</option>`;
-        });
-
-        const workerSelect = document.getElementById('summaryWorker');
-        workerSelect.innerHTML = '<option value="">All Labours</option>';
-        labours.forEach(l => {
-            workerSelect.innerHTML += `<option value="${l.worker_id}">${l.name}</option>`;
-        });
+        const res = await fetch(`/api/attendance/date/${dateStr}`);
+        const rows = await res.json();
+        renderDay(rows);
     } catch (e) {
-        console.error('Error loading summary filters:', e);
+        activity.innerHTML = '<div class="error">Could not load attendance.</div>';
+        console.error(e);
     }
 }
 
-async function loadSummary() {
-    const startDate = document.getElementById('summaryStartDate').value;
-    const endDate = document.getElementById('summaryEndDate').value;
-    const project = document.getElementById('summaryProject').value;
-    const workerId = document.getElementById('summaryWorker').value;
-    const dashboard = document.getElementById('summaryDashboard');
+function renderDay(rows) {
+    // Present = explicitly marked Present. Absent = explicitly marked Absent
+    // (a real record); never-marked workers carry a synthesised id:null default
+    // and are ignored so the absent count stays meaningful.
+    const present = rows.filter(r => r.attendance && r.attendance.status === 'P');
+    const absent = rows.filter(r => r.attendance && r.attendance.status === 'A' && r.attendance.id != null);
+    const totalOT = present.reduce((s, r) => s + (parseFloat(r.attendance.ot_hours) || 0), 0);
 
-    if (!startDate || !endDate) {
-        dashboard.innerHTML = '<div class="empty-state">Please select both start and end dates.</div>';
-        return;
+    document.getElementById('daySummaryStrip').innerHTML = `
+        <span class="dss-item dss-present">${present.length} present</span>
+        <span class="dss-item dss-absent">${absent.length} absent</span>
+        <span class="dss-item dss-ot">${round1(totalOT)} OT hrs</span>
+    `;
+
+    const activityEl = document.getElementById('dayActivity');
+    if (present.length === 0) {
+        activityEl.innerHTML = '<div class="empty-state">No one marked present on this day.</div>';
+    } else {
+        const groups = {};
+        present.forEach(r => {
+            const proj = r.attendance.project || 'No project';
+            (groups[proj] = groups[proj] || []).push(r);
+        });
+        const projectNames = Object.keys(groups).sort((a, b) => {
+            if (a === 'No project') return 1;
+            if (b === 'No project') return -1;
+            return a.localeCompare(b);
+        });
+        activityEl.innerHTML = projectNames.map(proj => {
+            const members = groups[proj].sort((a, b) => a.name.localeCompare(b.name));
+            return `
+                <div class="day-project-group">
+                    <div class="day-project-title">${escapeHtml(proj)} <span class="count">(${members.length})</span></div>
+                    <div class="marked-list">${members.map(dayRow).join('')}</div>
+                </div>
+            `;
+        }).join('');
     }
 
-    dashboard.innerHTML = '<div class="loading">Loading summary...</div>';
+    const absentEl = document.getElementById('dayAbsent');
+    if (absent.length > 0) {
+        const names = absent.sort((a, b) => a.name.localeCompare(b.name))
+            .map(r => `<span class="absent-name">${escapeHtml(r.name)}</span>`).join('');
+        absentEl.innerHTML = `
+            <details class="absent-details">
+                <summary>Absent <span class="count">(${absent.length})</span></summary>
+                <div class="absent-names">${names}</div>
+            </details>
+        `;
+    }
+}
+
+function dayRow(r) {
+    const a = r.attendance;
+    const role = a.role || '—';
+    const work = a.work ? ' · ' + escapeHtml(a.work) : '';
+    const ot = (parseFloat(a.ot_hours) || 0) > 0 ? `+${a.ot_hours} OT` : 'No OT';
+    return `
+        <div class="marked-row" onclick="showHistory(${r.worker_id})">
+            <div class="mr-main">
+                <span class="mr-name">${escapeHtml(r.name)}</span>
+                <span class="mr-role">${escapeHtml(role)}${work}</span>
+            </div>
+            <div class="mr-meta">
+                <span class="mr-ot">${ot}</span>
+            </div>
+        </div>
+    `;
+}
+
+// ---------- PERIOD VIEW ----------
+
+function setPeriod(range) {
+    let start, end;
+    const today = new Date();
+    if (range === 'week') {
+        const day = today.getDay();
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        start = monday.toISOString().split('T')[0];
+        end = sunday.toISOString().split('T')[0];
+    } else if (range === 'month') {
+        start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+        end = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+    } else {  // custom — driven by the two date inputs
+        start = document.getElementById('periodStartDate').value;
+        end = document.getElementById('periodEndDate').value;
+        if (!start || !end) return;  // wait until both are set
+    }
+
+    document.querySelectorAll('#summaryPeriod .period-chip').forEach(c =>
+        c.classList.toggle('active', c.dataset.range === range));
+    document.getElementById('periodStartDate').value = start;
+    document.getElementById('periodEndDate').value = end;
+    loadPeriod(start, end);
+}
+
+async function loadPeriod(start, end) {
+    document.getElementById('periodSummaryStrip').innerHTML = '';
+    const body = document.getElementById('periodBody');
+    body.innerHTML = '<div class="loading">Loading…</div>';
 
     try {
-        let url = `/api/attendance/summary?start_date=${startDate}&end_date=${endDate}`;
-        if (project) url += `&project=${encodeURIComponent(project)}`;
-        if (workerId) url += `&worker_id=${workerId}`;
-
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (response.ok) {
-            renderSummaryDashboard(data);
-        } else {
-            dashboard.innerHTML = `<div class="error">${data.error || 'Error loading summary.'}</div>`;
+        const res = await fetch(`/api/attendance/summary?start_date=${start}&end_date=${end}`);
+        const data = await res.json();
+        if (!res.ok) {
+            body.innerHTML = `<div class="error">${data.error || 'Error loading summary.'}</div>`;
+            return;
         }
-    } catch (error) {
-        dashboard.innerHTML = '<div class="error">Error loading summary data.</div>';
-        console.error(error);
+        renderPeriod(data);
+    } catch (e) {
+        body.innerHTML = '<div class="error">Error loading summary data.</div>';
+        console.error(e);
     }
 }
 
-function renderSummaryDashboard(data) {
-    const dashboard = document.getElementById('summaryDashboard');
+function renderPeriod(data) {
+    document.getElementById('periodSummaryStrip').innerHTML = `
+        <span class="dss-item dss-present">${data.total_workers} workers</span>
+        <span class="dss-item dss-days">${data.working_days} working days</span>
+        <span class="dss-item dss-ot">${data.total_ot_hours} OT hrs</span>
+    `;
 
-    if (data.total_workers === 0) {
-        dashboard.innerHTML = '<div class="empty-state">No attendance data found for the selected filters.</div>';
+    const body = document.getElementById('periodBody');
+    if (!data.workers || data.workers.length === 0) {
+        body.innerHTML = '<div class="empty-state">No attendance in this period.</div>';
         return;
     }
 
     let html = '';
 
-    // Stat cards
-    html += `
-        <div class="summary-stat-cards">
-            <div class="summary-stat-card">
-                <div class="summary-stat-label">Workers</div>
-                <div class="summary-stat-value">${data.total_workers}</div>
-            </div>
-            <div class="summary-stat-card stat-success">
-                <div class="summary-stat-label">Working Days</div>
-                <div class="summary-stat-value">${data.working_days}</div>
-            </div>
-            <div class="summary-stat-card stat-accent">
-                <div class="summary-stat-label">OT Hours</div>
-                <div class="summary-stat-value">${data.total_ot_hours}</div>
-            </div>
-            <div class="summary-stat-card stat-info">
-                <div class="summary-stat-label">Projects</div>
-                <div class="summary-stat-value">${data.projects.length}</div>
-            </div>
-        </div>
-    `;
+    // Activity breakdown (worker-days per work type) as simple proportional bars.
+    if (data.activity_breakdown && data.activity_breakdown.length) {
+        const max = Math.max(...data.activity_breakdown.map(a => a.days));
+        html += `<div class="summary-block-title">Work done</div><div class="activity-list">`;
+        data.activity_breakdown.forEach(a => {
+            const pct = max ? Math.round((a.days / max) * 100) : 0;
+            html += `
+                <div class="activity-bar">
+                    <span class="ab-label">${escapeHtml(a.work)}</span>
+                    <span class="ab-track"><span class="ab-fill" style="width:${pct}%"></span></span>
+                    <span class="ab-count">${a.days}</span>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
 
-    // Project breakdown
-    if (data.projects.length > 0) {
-        html += `<div class="summary-section-title">Project Breakdown</div>`;
-        html += `<div class="project-breakdown">`;
+    // Projects
+    if (data.projects && data.projects.length) {
+        html += `<div class="summary-block-title">Projects</div><div class="project-breakdown">`;
         data.projects.forEach(p => {
             html += `
                 <div class="project-breakdown-card">
-                    <div class="project-breakdown-name">${p.name}</div>
+                    <div class="project-breakdown-name">${escapeHtml(p.name)}</div>
                     <div class="project-breakdown-stats">
                         <span class="pb-stat"><strong>${p.worker_count}</strong> workers</span>
                         <span class="pb-stat stat-present"><strong>${p.working_days}</strong> days</span>
@@ -589,112 +659,28 @@ function renderSummaryDashboard(data) {
         html += `</div>`;
     }
 
-    // Daily breakdown table
-    if (data.daily_breakdown.length > 0) {
-        html += `<div class="summary-section-title">Daily Breakdown</div>`;
+    // Per-worker summary cards (tap → history). Attendance + activity, no money.
+    html += `<div class="summary-block-title">Workers</div><div class="period-workers">`;
+    data.workers.forEach(w => {
+        const works = (w.works && w.works.length) ? w.works.join(', ') : '—';
+        const projects = (w.projects && w.projects.length) ? w.projects.join(', ') : '—';
         html += `
-            <div class="daily-breakdown-table-wrap">
-                <table class="daily-breakdown-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th class="right">Present</th>
-                            <th class="right">Absent</th>
-                            <th class="right">Holiday</th>
-                            <th class="right">OT Hours</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.daily_breakdown.map(d => `
-                            <tr>
-                                <td data-label="Date">${formatDate(d.date)}</td>
-                                <td class="right" data-label="Present"><span class="stat-badge-sm present">${d.present}</span></td>
-                                <td class="right" data-label="Absent"><span class="stat-badge-sm absent">${d.absent}</span></td>
-                                <td class="right" data-label="Holiday"><span class="stat-badge-sm holiday">${d.holiday}</span></td>
-                                <td class="right" data-label="OT Hours">${d.ot_hours}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+            <div class="period-worker-card" onclick="showHistory(${w.worker_id})">
+                <div class="pwc-head">
+                    <span class="pwc-name">${escapeHtml(w.name)}</span>
+                    <span class="pwc-stats">
+                        <span class="pwc-pill present">${w.present_days}d present</span>
+                        ${w.ot_hours > 0 ? `<span class="pwc-pill ot">+${w.ot_hours} OT</span>` : ''}
+                    </span>
+                </div>
+                <div class="pwc-meta"><span class="pwc-label">Work</span> ${escapeHtml(works)}</div>
+                <div class="pwc-meta"><span class="pwc-label">Projects</span> ${escapeHtml(projects)}</div>
             </div>
         `;
-    }
+    });
+    html += `</div>`;
 
-    // Worker summary table
-    if (data.workers.length > 0) {
-        html += `<div class="summary-section-title">Worker Summary</div>`;
-        html += `
-            <div class="worker-summary-table-wrap">
-                <table class="worker-summary-table">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Team</th>
-                            <th class="right">Present</th>
-                            <th class="right">Absent</th>
-                            <th class="right">OT Hours</th>
-                            <th>Projects</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.workers.map(w => `
-                            <tr>
-                                <td class="worker-name" data-label="Name">${w.name}</td>
-                                <td data-label="Team">${w.team || '-'}</td>
-                                <td class="right" data-label="Present"><span class="stat-badge-sm present">${w.present_days}</span></td>
-                                <td class="right" data-label="Absent"><span class="stat-badge-sm absent">${w.absent_days}</span></td>
-                                <td class="right" data-label="OT Hours">${w.ot_hours}</td>
-                                <td data-label="Projects">${w.projects.join(', ') || '-'}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
-    }
-
-    dashboard.innerHTML = html;
-}
-
-function resetSummaryFilters() {
-    // Reset dates to current week
-    const today = new Date();
-    const day = today.getDay();
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-
-    document.getElementById('summaryStartDate').value = monday.toISOString().split('T')[0];
-    document.getElementById('summaryEndDate').value = sunday.toISOString().split('T')[0];
-    document.getElementById('summaryProject').value = '';
-    document.getElementById('summaryWorker').value = '';
-    loadSummary();
-}
-
-function setQuickFilter(filter) {
-    const today = new Date();
-    let startDate, endDate;
-
-    if (filter === 'today') {
-        startDate = endDate = today;
-    } else if (filter === 'yesterday') {
-        const yesterday = new Date(today);
-        yesterday.setDate(today.getDate() - 1);
-        startDate = endDate = yesterday;
-    }
-
-    document.getElementById('summaryStartDate').value = startDate.toISOString().split('T')[0];
-    document.getElementById('summaryEndDate').value = endDate.toISOString().split('T')[0];
-    loadSummary();
-}
-
-function setQuickFilterDate(dateValue) {
-    if (dateValue) {
-        document.getElementById('summaryStartDate').value = dateValue;
-        document.getElementById('summaryEndDate').value = dateValue;
-        loadSummary();
-    }
+    body.innerHTML = html;
 }
 
 function formatDate(dateStr) {

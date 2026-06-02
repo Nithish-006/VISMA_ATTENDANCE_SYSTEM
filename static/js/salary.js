@@ -369,7 +369,8 @@ async function exportExcel() {
                     status: a.status,
                     ot: a.ot_hours || '',
                     project: a.project || '',
-                    role: a.role || ''
+                    role: a.role || '',
+                    work: a.work || ''
                 };
             });
 
@@ -393,11 +394,11 @@ async function exportExcel() {
                 const isSunday = date.getDay() === 0;
 
                 if (isSunday) {
-                    headerRow1.push(`${day} SUNDAY`, '', '', '');
+                    headerRow1.push(`${day} SUNDAY`, '', '', '', '');
                 } else {
-                    headerRow1.push(day, '', '', '');
+                    headerRow1.push(day, '', '', '', '');
                 }
-                headerRow2.push('', 'OT', 'Pr', 'Role');
+                headerRow2.push('', 'OT', 'Pr', 'Role', 'Work');
             }
 
             headerRow1.push(`${sheetName} MONTH LABOUR ATTENDANCE & PAYMENT`, '', '', '', '', '');
@@ -421,9 +422,9 @@ async function exportExcel() {
                     for (let day = 1; day <= daysInMonth; day++) {
                         const att = attendanceMap[w.worker_id]?.[day];
                         if (att) {
-                            row.push(att.status, att.ot || '', att.project || '', att.role || '');
+                            row.push(att.status, att.ot || '', att.project || '', att.role || '', att.work || '');
                         } else {
-                            row.push('', '', '', '');
+                            row.push('', '', '', '', '');
                         }
                     }
 
@@ -519,7 +520,7 @@ async function exportExcel() {
             ];
 
             for (let day = 1; day <= daysInMonth; day++) {
-                cols.push({ wch: 3 }, { wch: 3 }, { wch: 8 }, { wch: 8 });
+                cols.push({ wch: 3 }, { wch: 3 }, { wch: 8 }, { wch: 8 }, { wch: 10 });
             }
 
             cols.push(

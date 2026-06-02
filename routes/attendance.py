@@ -94,6 +94,7 @@ def get_day_roster(date_str):
                 'worker_id': r.worker_id,
                 'name': w.name if w else f'Worker {r.worker_id}',
                 'role': r.role or '',
+                'work': r.work or '',
                 'team': w.team if w else '',
                 'status': r.status,
                 'ot_hours': float(r.ot_hours) if r.ot_hours else 0,
@@ -307,6 +308,8 @@ def _upsert_attendance(data):
             attendance.supervisor_id = data['supervisor_id']
         if 'role' in data:
             attendance.role = data['role']
+        if 'work' in data:
+            attendance.work = data['work']
     else:
         attendance = Attendance(
             worker_id=worker_id,
@@ -315,7 +318,8 @@ def _upsert_attendance(data):
             ot_hours=data.get('ot_hours', 0),
             project=data.get('project'),
             supervisor_id=data.get('supervisor_id'),
-            role=data.get('role')
+            role=data.get('role'),
+            work=data.get('work')
         )
         db.session.add(attendance)
 
@@ -524,6 +528,8 @@ def get_attendance_summary():
     worker_data = {}
     # Track present workers (for KPI)
     present_workers = set()
+    # Activity breakdown: present worker-days per work type
+    activity = {}
 
     total_present_days = 0
     total_ot_hours = 0.0
@@ -567,7 +573,9 @@ def get_attendance_summary():
                 'present_days': 0,
                 'absent_days': 0,
                 'ot_hours': 0,
-                'projects': set()
+                'projects': set(),
+                'roles': set(),
+                'works': set()
             }
         if r.status == 'P':
             worker_data[r.worker_id]['present_days'] += 1
@@ -576,6 +584,14 @@ def get_attendance_summary():
         worker_data[r.worker_id]['ot_hours'] += ot
         if r.project:
             worker_data[r.worker_id]['projects'].add(r.project)
+        if r.role:
+            worker_data[r.worker_id]['roles'].add(r.role)
+        if r.work:
+            worker_data[r.worker_id]['works'].add(r.work)
+
+        # Activity breakdown counts worker-days of work actually done (present).
+        if r.status == 'P' and r.work:
+            activity[r.work] = activity.get(r.work, 0) + 1
 
     # Build response
     projects_list = []
@@ -614,11 +630,19 @@ def get_attendance_summary():
             'absent_days': data['absent_days'],
             'ot_hours': round(data['ot_hours'], 2),
             'salary': salary,
-            'projects': sorted(list(data['projects']))
+            'projects': sorted(list(data['projects'])),
+            'roles': sorted(list(data['roles'])),
+            'works': sorted(list(data['works']))
         })
 
     # Working days = unique dates that had at least one Present worker
     working_days = sum(1 for d in daily_data.values() if d['present'] > 0)
+
+    # Activity breakdown sorted by worker-days desc (most-done work first)
+    activity_breakdown = [
+        {'work': work, 'days': days}
+        for work, days in sorted(activity.items(), key=lambda x: x[1], reverse=True)
+    ]
 
     return jsonify({
         'total_workers': len(present_workers),  # Only count workers with Present status
@@ -628,7 +652,8 @@ def get_attendance_summary():
         'total_salary': round(total_salary, 2),
         'projects': projects_list,
         'daily_breakdown': daily_list,
-        'workers': workers_list
+        'workers': workers_list,
+        'activity_breakdown': activity_breakdown
     })
 
 
@@ -674,7 +699,8 @@ def export_attendance():
                 'status': att.status,
                 'ot_hours': float(att.ot_hours) if att.ot_hours else 0,
                 'project': att.project or '',
-                'role': att.role or ''
+                'role': att.role or '',
+                'work': att.work or ''
             })
 
     return jsonify(result)

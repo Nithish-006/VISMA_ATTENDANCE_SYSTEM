@@ -766,14 +766,8 @@ body {
 }
 
 /* ============================================
-   LABOURS LIST PAGE
+   TEAM SECTIONS (Edit Details tab)
    ============================================ */
-.labours-list {
-    display: flex;
-    flex-direction: column;
-    gap: 28px;
-}
-
 .team-section {
     background: var(--bg-primary);
     border-radius: var(--radius-xl);
@@ -812,72 +806,6 @@ body {
     padding: 4px 10px;
     border-radius: var(--radius-sm);
     font-size: 0.75rem;
-}
-
-.labour-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1px;
-    background: var(--border-light);
-}
-
-.labour-card {
-    background: var(--bg-primary);
-    padding: 18px 24px;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    position: relative;
-}
-
-.labour-card::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 3px;
-    height: 0;
-    background: var(--gradient-accent);
-    border-radius: 0 2px 2px 0;
-}
-
-.labour-card:hover {
-    background: var(--accent-light);
-}
-
-.labour-card:hover::after {
-    height: 60%;
-}
-
-.labour-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.labour-name {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 4px;
-}
-
-.labour-designation {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-}
-
-.labour-meta {
-    text-align: right;
-}
-
-.last-attendance {
-    font-size: 0.75rem;
-    color: var(--text-tertiary);
-    background: var(--bg-tertiary);
-    padding: 4px 10px;
-    border-radius: var(--radius-sm);
 }
 
 /* ============================================
@@ -1952,26 +1880,6 @@ tr.total-row td {
 /* ============================================
    ATTENDANCE SUMMARY
    ============================================ */
-.attendance-summary-section {
-    margin-bottom: 40px;
-}
-
-.quick-filters-container {
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.quick-filters-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
 .quick-filter-pill {
     height: 32px;
     padding: 0 14px;
@@ -2042,19 +1950,294 @@ tr.total-row td {
     white-space: nowrap;
 }
 
-.section-heading {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid var(--border-light);
-}
-
 .summary-dashboard {
     display: flex;
     flex-direction: column;
     gap: 24px;
+}
+
+/* ============================================
+   SUMMARY REDESIGN — Day & Period views
+   ============================================ */
+
+/* Day / Period segmented toggle */
+.summary-mode-toggle {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 999px;
+    margin-bottom: 20px;
+}
+
+.summary-mode-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 8px 24px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.summary-mode-btn.active {
+    background: var(--bg-primary);
+    color: var(--accent);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Date / range choosers */
+.day-chooser,
+.period-chooser {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.day-quick-chips,
+.period-quick-chips {
+    display: flex;
+    gap: 8px;
+}
+
+.day-chip,
+.period-chip {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-medium);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.day-chip.active,
+.period-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.period-custom {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.period-dash {
+    color: var(--text-tertiary);
+    font-size: 0.8125rem;
+}
+
+/* Slim at-a-glance count strip (replaces the old KPI cards) */
+.day-summary-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.dss-item {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+
+.dss-present { background: var(--success-bg); color: var(--success); }
+.dss-absent { background: var(--danger-bg); color: var(--danger); }
+.dss-ot { background: var(--warning-bg, #fff4e5); color: var(--warning); }
+.dss-days { background: var(--accent-light); color: var(--accent); }
+
+/* Day view — present workers grouped by project (rows reuse .marked-row) */
+.day-project-group { margin-bottom: 22px; }
+
+.day-project-title {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.day-project-title .count { color: var(--text-tertiary); font-weight: 600; }
+
+.day-activity .marked-row { cursor: pointer; }
+
+/* Absent — collapsible list */
+.day-absent { margin-top: 8px; }
+
+.absent-details {
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
+}
+
+.absent-details summary {
+    cursor: pointer;
+    padding: 12px 16px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    list-style: none;
+}
+
+.absent-details summary::-webkit-details-marker { display: none; }
+.absent-details summary .count { color: var(--text-tertiary); }
+.absent-details[open] summary { border-bottom: 1px solid var(--border-light); }
+
+.absent-names {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 14px 16px;
+}
+
+.absent-name {
+    font-size: 0.8125rem;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    padding: 4px 12px;
+    border-radius: 999px;
+}
+
+/* Period view */
+.summary-block-title {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-tertiary);
+    margin: 22px 0 12px;
+}
+
+.activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.activity-bar {
+    display: grid;
+    grid-template-columns: 120px 1fr 44px;
+    align-items: center;
+    gap: 12px;
+}
+
+.ab-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ab-track {
+    height: 10px;
+    background: var(--bg-tertiary);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.ab-fill {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 999px;
+}
+
+.ab-count {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-align: right;
+}
+
+.period-workers {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+.period-worker-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-light);
+    border-left: 4px solid var(--accent);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.period-worker-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+
+.pwc-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.pwc-name {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.pwc-stats {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.pwc-pill {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.pwc-pill.present { background: var(--success-bg); color: var(--success); }
+.pwc-pill.ot { background: var(--warning-bg, #fff4e5); color: var(--warning); }
+
+.pwc-meta {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pwc-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+    margin-right: 6px;
+}
+
+@media (max-width: 600px) {
+    .summary-mode-toggle { display: flex; width: 100%; }
+    .summary-mode-btn { flex: 1; }
+    .activity-bar { grid-template-columns: 84px 1fr 34px; gap: 8px; }
+    .period-workers { grid-template-columns: 1fr; }
+    .day-chooser,
+    .period-chooser { gap: 8px; }
+    .period-custom { width: 100%; }
+    .period-custom .date-input { flex: 1; min-width: 0; }
 }
 
 .summary-stat-cards {
@@ -2412,8 +2595,7 @@ tr.total-row td {
         align-self: center;
     }
 
-    .worker-grid,
-    .labour-cards {
+    .worker-grid {
         grid-template-columns: 1fr;
     }
 
@@ -2437,31 +2619,6 @@ tr.total-row td {
     }
 
     /* Summary responsive */
-    .quick-filters-container {
-        flex-direction: row;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-    }
-
-    .quick-filters-label {
-        font-size: 0.6875rem;
-        width: 100%;
-        margin-bottom: -2px;
-        color: var(--text-tertiary);
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-    }
-
-    .quick-filters-container .quick-filter-pill {
-        height: 28px;
-        padding: 0 12px;
-        font-size: 0.75rem;
-        border-radius: 14px;
-        flex-shrink: 0;
-        width: auto;
-    }
-
     .quick-date-picker {
         height: 28px;
         padding: 0 10px;
@@ -2813,7 +2970,7 @@ select.edit-input {
 
 .mark-entry-card {
     display: grid;
-    grid-template-columns: 1.4fr 1fr 1.4fr auto auto auto;
+    grid-template-columns: 1.4fr 1fr 1fr 1.4fr auto auto auto;
     gap: 16px;
     align-items: end;
     padding: 20px;
@@ -3222,9 +3379,10 @@ select.edit-input {
         min-width: 0;
     }
 
-    /* Worker, Role & Project get a full row each; Status + OT share a row */
+    /* Worker, Role, Work & Project get a full row each; Status + OT share a row */
     .entry-worker,
     .entry-role,
+    .entry-work,
     .entry-project,
     .entry-action {
         grid-column: 1 / -1;

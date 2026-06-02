@@ -35,6 +35,14 @@ def run_migrations(app):
                 db.session.commit()
                 app.logger.info("Migration: added attendance.role")
 
+            # Like role, the work done is per-day and chosen at marking time.
+            if 'work' not in columns:
+                db.session.execute(
+                    text('ALTER TABLE attendance ADD COLUMN work VARCHAR(50) NULL')
+                )
+                db.session.commit()
+                app.logger.info("Migration: added attendance.work")
+
             # Canonical project values ("{id} - {stem_name}") can exceed the
             # original VARCHAR(100), since stem_name alone is up to 255 chars.
             # Widen the column if it's still too narrow.

@@ -69,6 +69,9 @@ class Attendance(db.Model):
     # Role performed on this day. Roles are elastic — a worker can do any job —
     # so the role is chosen per attendance record, not fixed to the worker.
     role = db.Column(db.String(50))
+    # The specific work done that day (e.g. welding, grinding). Like role, it's
+    # per-day and chosen at marking time.
+    work = db.Column(db.String(50))
 
     __table_args__ = (
         db.UniqueConstraint('worker_id', 'date', name='unique_daily_attendance'),
@@ -83,5 +86,6 @@ class Attendance(db.Model):
             'ot_hours': float(self.ot_hours) if self.ot_hours else 0,
             'project': self.project,
             'supervisor_id': self.supervisor_id,
-            'role': self.role
+            'role': self.role,
+            'work': self.work
         }

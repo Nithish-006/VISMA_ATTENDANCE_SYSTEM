@@ -1,9 +1,9 @@
 // Mark Attendance Page — supervisor-driven flow
 //
-// Flow: pick a supervisor -> add workers one at a time (worker + role +
+// Flow: pick a supervisor -> add workers one at a time (worker + role + work +
 // project + P/A + OT) -> they collect in a list -> Finish Attendance commits
-// everything. Roles are elastic, so the role is chosen per entry, not derived
-// from the worker.
+// everything. Role and work are elastic, so they're chosen per entry, not
+// derived from the worker.
 // Marking targets today by default, with a one-day buffer (Today/Yesterday
 // toggle) so late-reported OT can be recorded; the backend rejects older dates.
 
@@ -17,7 +17,7 @@ let projectRegistryStale = false;     // true when serving a cached (not live) l
 let comboActiveIndex = -1;            // highlighted option in the open list
 let markedWorkerIds = new Set();      // workers marked on the selected day by ANY supervisor
 let initialPersistedIds = new Set();  // workers this supervisor already had saved for the selected day
-let entries = [];                     // working list: {worker_id, name, role, project, status, ot_hours}
+let entries = [];                     // working list: {worker_id, name, role, work, project, status, ot_hours}
 let entryStatus = null;               // 'P' | 'A' currently chosen in the entry form
 let markDateStr = '';                 // the day being marked (today or yesterday)
 
@@ -192,6 +192,7 @@ async function loadRoster() {
             worker_id: r.worker_id,
             name: r.name,
             role: r.role || '',
+            work: r.work || '',
             project: r.project || '',
             status: r.status === 'P' ? 'P' : 'A',
             ot_hours: r.ot_hours || 0
@@ -396,6 +397,7 @@ function addEntry() {
     const wSel = document.getElementById('entryWorker');
     const workerId = wSel.value ? parseInt(wSel.value) : null;
     const role = document.getElementById('entryRole').value;
+    const work = document.getElementById('entryWork').value;
     const project = document.getElementById('entryProject').value;
     const projectSearch = document.getElementById('projectSearch').value.trim();
     let ot = parseFloat(document.getElementById('entryOT').value) || 0;
@@ -403,6 +405,7 @@ function addEntry() {
 
     if (!workerId) { showMessage('Please choose a worker.', 'error'); return; }
     if (!role) { showMessage('Please choose a role.', 'error'); return; }
+    if (!work) { showMessage('Please choose the work done.', 'error'); return; }
     if (!entryStatus) { showMessage('Please mark Present (P) or Absent (A).', 'error'); return; }
     // Blank is allowed, but a typed-but-not-selected query is not — it would
     // otherwise be silently dropped. Force the user to pick from the list.
@@ -417,6 +420,7 @@ function addEntry() {
         worker_id: workerId,
         name: opt.dataset.name,
         role: role,
+        work: work,
         project: project || '',
         status: entryStatus,
         ot_hours: ot
@@ -444,6 +448,7 @@ function editEntry(index) {
 
     document.getElementById('entryWorker').value = e.worker_id;
     document.getElementById('entryRole').value = e.role || '';
+    document.getElementById('entryWork').value = e.work || '';
     // Preselect only if the stored value still exists in the registry; a
     // legacy/unmatched value is cleared so the user re-picks a canonical one.
     const known = projectValues.has(e.project) ? e.project : '';
@@ -461,6 +466,7 @@ function editEntry(index) {
 function resetEntryForm() {
     document.getElementById('entryWorker').value = '';
     document.getElementById('entryRole').value = '';
+    document.getElementById('entryWork').value = '';
     setProjectValue('');
     document.getElementById('projectSearch').value = '';
     closeProjectList(false);
@@ -483,7 +489,7 @@ function renderEntries() {
         <div class="marked-row">
             <div class="mr-main">
                 <span class="mr-name">${escapeHtml(e.name)}</span>
-                <span class="mr-role">${escapeHtml(e.role || '—')}</span>
+                <span class="mr-role">${escapeHtml(e.role || '—')}${e.work ? ' · ' + escapeHtml(e.work) : ''}</span>
             </div>
             <div class="mr-meta">
                 <span class="mr-project" title="Project">${e.project ? escapeHtml(e.project) : 'No project'}</span>
@@ -528,6 +534,7 @@ async function finishAttendance() {
                 ot_hours: e.ot_hours,
                 project: e.project || null,
                 role: e.role || null,
+                work: e.work || null,
                 supervisor_id: selectedSupervisorId
             }));
             const res = await fetch('/api/attendance', {
