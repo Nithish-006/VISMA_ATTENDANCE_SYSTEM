@@ -25,7 +25,9 @@ _engine_lock = threading.Lock()
 _cache_lock = threading.Lock()
 _cache = {"data": None, "ts": 0.0}
 
-_QUERY = text("SELECT id, stem_name FROM projects ORDER BY id")
+# Only real projects are selectable — rows with is_project = 0 are internal
+# (e.g. factory expense) and must not appear in the attendance dropdown.
+_QUERY = text("SELECT id, stem_name FROM projects WHERE is_project = 1 ORDER BY id")
 
 
 class ProjectsRegistryError(Exception):

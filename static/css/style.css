@@ -3034,7 +3034,13 @@ select.edit-input {
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
-    right: 0;
+    right: auto;
+    /* Grow to fit the longest project value instead of being clamped to the
+       (narrow) column width; stay at least as wide as the input and capped so
+       it never overflows the viewport on mobile. */
+    min-width: 100%;
+    width: max-content;
+    max-width: min(480px, 90vw);
     z-index: 50;
     max-height: 260px;
     overflow-y: auto;
@@ -3051,9 +3057,8 @@ select.edit-input {
     font-size: 0.9375rem;
     color: var(--text-primary);
     cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .combo-option:hover,
