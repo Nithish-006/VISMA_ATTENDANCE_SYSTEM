@@ -368,7 +368,8 @@ async function exportExcel() {
                 attendanceMap[a.worker_id][day] = {
                     status: a.status,
                     ot: a.ot_hours || '',
-                    project: a.project || ''
+                    project: a.project || '',
+                    role: a.role || ''
                 };
             });
 
@@ -382,19 +383,21 @@ async function exportExcel() {
 
             // Build header rows
             const titleRow = [`LABOUR ATTENDANCE FOR ${sheetName}`];
-            const headerRow1 = ['S. No', 'Name', 'DESIGNATION', 'TEAM'];
-            const headerRow2 = ['', '', '', ''];
+            // No worker-level DESIGNATION column: roles are elastic and shown
+            // per day in the Role sub-column below.
+            const headerRow1 = ['S. No', 'Name', 'TEAM'];
+            const headerRow2 = ['', '', ''];
 
             for (let day = 1; day <= daysInMonth; day++) {
                 const date = new Date(year, monthNum - 1, day);
                 const isSunday = date.getDay() === 0;
 
                 if (isSunday) {
-                    headerRow1.push(`${day} SUNDAY`, '', '');
+                    headerRow1.push(`${day} SUNDAY`, '', '', '');
                 } else {
-                    headerRow1.push(day, '', '');
+                    headerRow1.push(day, '', '', '');
                 }
-                headerRow2.push('', 'OT', 'Pr');
+                headerRow2.push('', 'OT', 'Pr', 'Role');
             }
 
             headerRow1.push(`${sheetName} MONTH LABOUR ATTENDANCE & PAYMENT`, '', '', '', '', '');
@@ -413,14 +416,14 @@ async function exportExcel() {
 
             for (const [team, workers] of Object.entries(teams)) {
                 workers.forEach(w => {
-                    const row = [sNo++, w.name, w.designation || '', w.team || ''];
+                    const row = [sNo++, w.name, w.team || ''];
 
                     for (let day = 1; day <= daysInMonth; day++) {
                         const att = attendanceMap[w.worker_id]?.[day];
                         if (att) {
-                            row.push(att.status, att.ot || '', att.project || '');
+                            row.push(att.status, att.ot || '', att.project || '', att.role || '');
                         } else {
-                            row.push('', '', '');
+                            row.push('', '', '', '');
                         }
                     }
 
@@ -512,12 +515,11 @@ async function exportExcel() {
             const cols = [
                 { wch: 5 },
                 { wch: 20 },
-                { wch: 12 },
                 { wch: 10 }
             ];
 
             for (let day = 1; day <= daysInMonth; day++) {
-                cols.push({ wch: 3 }, { wch: 3 }, { wch: 8 });
+                cols.push({ wch: 3 }, { wch: 3 }, { wch: 8 }, { wch: 8 });
             }
 
             cols.push(
@@ -531,7 +533,7 @@ async function exportExcel() {
 
             sheet['!cols'] = cols;
             sheet['!merges'] = [
-                { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }
             ];
 
             XLSX.utils.book_append_sheet(wb, sheet, sheetName);

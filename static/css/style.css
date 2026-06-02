@@ -2813,7 +2813,7 @@ select.edit-input {
 
 .mark-entry-card {
     display: grid;
-    grid-template-columns: 1.4fr 1.4fr auto auto auto;
+    grid-template-columns: 1.4fr 1fr 1.4fr auto auto auto;
     gap: 16px;
     align-items: end;
     padding: 20px;
@@ -3222,8 +3222,9 @@ select.edit-input {
         min-width: 0;
     }
 
-    /* Worker & Project get a full row each; Status + OT share a row */
+    /* Worker, Role & Project get a full row each; Status + OT share a row */
     .entry-worker,
+    .entry-role,
     .entry-project,
     .entry-action {
         grid-column: 1 / -1;

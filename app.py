@@ -26,6 +26,15 @@ def run_migrations(app):
                 db.session.commit()
                 app.logger.info("Migration: added attendance.supervisor_id")
 
+            # Role is chosen per day at marking time (roles are elastic), so it
+            # lives on the attendance record rather than the worker.
+            if 'role' not in columns:
+                db.session.execute(
+                    text('ALTER TABLE attendance ADD COLUMN role VARCHAR(50) NULL')
+                )
+                db.session.commit()
+                app.logger.info("Migration: added attendance.role")
+
             # Canonical project values ("{id} - {stem_name}") can exceed the
             # original VARCHAR(100), since stem_name alone is up to 255 chars.
             # Widen the column if it's still too narrow.
@@ -42,23 +51,40 @@ def run_migrations(app):
             app.logger.error(f"Migration failed: {e}")
 
 
-DEFAULT_SUPERVISORS = ['AMBETHRAJ', 'KEDHAR', 'RAJU', 'VISMA']
+DEFAULT_SUPERVISORS = ['Thamburaj', 'Dhanapal', 'Arjun']
 
 
 def seed_supervisors(app):
-    """Ensure the default supervisors exist so the Mark-attendance dropdown is
-    never empty. Idempotent: only inserts names not already present
-    (case-insensitive), so it's safe on every startup and fresh deployments.
+    """Ensure the canonical supervisors exist so the Mark-attendance dropdown
+    is never empty.
+
+    The roster was revised to exactly DEFAULT_SUPERVISORS. The first startup
+    after that change is detected by *none* of the canonical names being
+    present yet — when that's the case we clear the old roster and insert the
+    new names (a one-time replacement). On every later startup we only top-up
+    missing canonical names, so any supervisor added through the UI ('+ New')
+    is preserved across restarts. Safe on fresh/empty deployments too.
     """
     from models import Supervisor
-    from sqlalchemy import func
 
     with app.app_context():
         try:
-            existing = {s.name.lower() for s in Supervisor.query.all()}
+            existing = Supervisor.query.all()
+            existing_names = {s.name.lower() for s in existing}
+            desired_names = {n.lower() for n in DEFAULT_SUPERVISORS}
+
+            # One-time replacement: a non-empty roster with no overlap at all
+            # means we're still on the old defaults — wipe and re-seed.
+            if existing and not (desired_names & existing_names):
+                for s in existing:
+                    db.session.delete(s)
+                db.session.flush()
+                existing_names = set()
+                app.logger.info("Cleared previous supervisor roster for replacement")
+
             added = False
             for name in DEFAULT_SUPERVISORS:
-                if name.lower() not in existing:
+                if name.lower() not in existing_names:
                     db.session.add(Supervisor(name=name))
                     added = True
             if added:

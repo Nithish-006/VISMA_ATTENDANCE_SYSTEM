@@ -66,6 +66,9 @@ class Attendance(db.Model):
     ot_hours = db.Column(db.Numeric(4, 2), default=0)
     project = db.Column(db.String(300))  # holds canonical "{id} - {stem_name}"
     supervisor_id = db.Column(db.Integer)  # who marked it (nullable for legacy records)
+    # Role performed on this day. Roles are elastic — a worker can do any job —
+    # so the role is chosen per attendance record, not fixed to the worker.
+    role = db.Column(db.String(50))
 
     __table_args__ = (
         db.UniqueConstraint('worker_id', 'date', name='unique_daily_attendance'),
@@ -79,5 +82,6 @@ class Attendance(db.Model):
             'status': self.status,
             'ot_hours': float(self.ot_hours) if self.ot_hours else 0,
             'project': self.project,
-            'supervisor_id': self.supervisor_id
+            'supervisor_id': self.supervisor_id,
+            'role': self.role
         }

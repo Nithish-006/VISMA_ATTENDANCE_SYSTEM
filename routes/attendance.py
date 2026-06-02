@@ -93,7 +93,7 @@ def get_day_roster(date_str):
             marked_by_supervisor.append({
                 'worker_id': r.worker_id,
                 'name': w.name if w else f'Worker {r.worker_id}',
-                'designation': w.designation if w else '',
+                'role': r.role or '',
                 'team': w.team if w else '',
                 'status': r.status,
                 'ot_hours': float(r.ot_hours) if r.ot_hours else 0,
@@ -305,6 +305,8 @@ def _upsert_attendance(data):
             attendance.project = data['project']
         if 'supervisor_id' in data:
             attendance.supervisor_id = data['supervisor_id']
+        if 'role' in data:
+            attendance.role = data['role']
     else:
         attendance = Attendance(
             worker_id=worker_id,
@@ -312,7 +314,8 @@ def _upsert_attendance(data):
             status=data.get('status', 'A'),
             ot_hours=data.get('ot_hours', 0),
             project=data.get('project'),
-            supervisor_id=data.get('supervisor_id')
+            supervisor_id=data.get('supervisor_id'),
+            role=data.get('role')
         )
         db.session.add(attendance)
 
@@ -670,7 +673,8 @@ def export_attendance():
                 'team': team,
                 'status': att.status,
                 'ot_hours': float(att.ot_hours) if att.ot_hours else 0,
-                'project': att.project or ''
+                'project': att.project or '',
+                'role': att.role or ''
             })
 
     return jsonify(result)

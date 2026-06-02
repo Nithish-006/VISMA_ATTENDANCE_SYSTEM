@@ -1,7 +1,9 @@
 // Mark Attendance Page — supervisor-driven flow
 //
-// Flow: pick a supervisor -> add workers one at a time (worker + project +
-// P/A + OT) -> they collect in a list -> Finish Attendance commits everything.
+// Flow: pick a supervisor -> add workers one at a time (worker + role +
+// project + P/A + OT) -> they collect in a list -> Finish Attendance commits
+// everything. Roles are elastic, so the role is chosen per entry, not derived
+// from the worker.
 // Marking targets today by default, with a one-day buffer (Today/Yesterday
 // toggle) so late-reported OT can be recorded; the backend rejects older dates.
 
@@ -15,7 +17,7 @@ let projectRegistryStale = false;     // true when serving a cached (not live) l
 let comboActiveIndex = -1;            // highlighted option in the open list
 let markedWorkerIds = new Set();      // workers marked on the selected day by ANY supervisor
 let initialPersistedIds = new Set();  // workers this supervisor already had saved for the selected day
-let entries = [];                     // working list: {worker_id, name, designation, project, status, ot_hours}
+let entries = [];                     // working list: {worker_id, name, role, project, status, ot_hours}
 let entryStatus = null;               // 'P' | 'A' currently chosen in the entry form
 let markDateStr = '';                 // the day being marked (today or yesterday)
 
@@ -189,7 +191,7 @@ async function loadRoster() {
         entries = (data.marked_by_supervisor || []).map(r => ({
             worker_id: r.worker_id,
             name: r.name,
-            designation: r.designation || '',
+            role: r.role || '',
             project: r.project || '',
             status: r.status === 'P' ? 'P' : 'A',
             ot_hours: r.ot_hours || 0
@@ -211,11 +213,12 @@ function populateWorkerSelect() {
     entries.forEach(e => excluded.add(e.worker_id));
 
     const available = allWorkers.filter(w => !excluded.has(w.worker_id));
+    // Worker is identified by name only. Roles are elastic and chosen per day
+    // via the Role dropdown, so we no longer append the worker's designation.
     sel.innerHTML = '<option value="">-- Select worker --</option>' +
-        available.map(w => {
-            const role = w.designation ? ` — ${escapeHtml(w.designation)}` : '';
-            return `<option value="${w.worker_id}" data-name="${escapeHtml(w.name)}" data-designation="${escapeHtml(w.designation || '')}">${escapeHtml(w.name)}${role}</option>`;
-        }).join('');
+        available.map(w =>
+            `<option value="${w.worker_id}" data-name="${escapeHtml(w.name)}">${escapeHtml(w.name)}</option>`
+        ).join('');
 }
 
 // ============================================
@@ -392,12 +395,14 @@ function escapeAttr(str) {
 function addEntry() {
     const wSel = document.getElementById('entryWorker');
     const workerId = wSel.value ? parseInt(wSel.value) : null;
+    const role = document.getElementById('entryRole').value;
     const project = document.getElementById('entryProject').value;
     const projectSearch = document.getElementById('projectSearch').value.trim();
     let ot = parseFloat(document.getElementById('entryOT').value) || 0;
     ot = Math.min(8, Math.max(0, ot));
 
     if (!workerId) { showMessage('Please choose a worker.', 'error'); return; }
+    if (!role) { showMessage('Please choose a role.', 'error'); return; }
     if (!entryStatus) { showMessage('Please mark Present (P) or Absent (A).', 'error'); return; }
     // Blank is allowed, but a typed-but-not-selected query is not — it would
     // otherwise be silently dropped. Force the user to pick from the list.
@@ -411,7 +416,7 @@ function addEntry() {
     entries.push({
         worker_id: workerId,
         name: opt.dataset.name,
-        designation: opt.dataset.designation || '',
+        role: role,
         project: project || '',
         status: entryStatus,
         ot_hours: ot
@@ -438,6 +443,7 @@ function editEntry(index) {
     renderEntries();
 
     document.getElementById('entryWorker').value = e.worker_id;
+    document.getElementById('entryRole').value = e.role || '';
     // Preselect only if the stored value still exists in the registry; a
     // legacy/unmatched value is cleared so the user re-picks a canonical one.
     const known = projectValues.has(e.project) ? e.project : '';
@@ -454,6 +460,7 @@ function editEntry(index) {
 
 function resetEntryForm() {
     document.getElementById('entryWorker').value = '';
+    document.getElementById('entryRole').value = '';
     setProjectValue('');
     document.getElementById('projectSearch').value = '';
     closeProjectList(false);
@@ -476,7 +483,7 @@ function renderEntries() {
         <div class="marked-row">
             <div class="mr-main">
                 <span class="mr-name">${escapeHtml(e.name)}</span>
-                <span class="mr-role">${escapeHtml(e.designation || '—')}</span>
+                <span class="mr-role">${escapeHtml(e.role || '—')}</span>
             </div>
             <div class="mr-meta">
                 <span class="mr-project" title="Project">${e.project ? escapeHtml(e.project) : 'No project'}</span>
@@ -520,6 +527,7 @@ async function finishAttendance() {
                 status: e.status,
                 ot_hours: e.ot_hours,
                 project: e.project || null,
+                role: e.role || null,
                 supervisor_id: selectedSupervisorId
             }));
             const res = await fetch('/api/attendance', {
