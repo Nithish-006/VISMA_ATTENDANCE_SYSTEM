@@ -79,9 +79,16 @@
                             </div>
                             <div class="entry-field entry-project">
                                 <label>Project</label>
-                                <select id="entryProject" class="select-input">
-                                    <option value="">-- Select project --</option>
-                                </select>
+                                <!-- Searchable combobox: type to filter, click to pick.
+                                     Selection only; the hidden input holds the canonical
+                                     "{id} - {stem_name}" value. No free text is stored. -->
+                                <div id="projectCombo" class="combo">
+                                    <input type="text" id="projectSearch" class="select-input combo-search"
+                                           placeholder="-- Select project --" autocomplete="off"
+                                           role="combobox" aria-expanded="false" aria-autocomplete="list">
+                                    <input type="hidden" id="entryProject" value="">
+                                    <div id="projectComboList" class="combo-list" style="display: none;"></div>
+                                </div>
                             </div>
                             <div class="entry-field entry-status">
                                 <label>Attendance</label>

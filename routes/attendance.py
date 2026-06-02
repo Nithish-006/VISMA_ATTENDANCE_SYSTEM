@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from models import db, Attendance, Salary, Supervisor
 from datetime import datetime, timedelta
 from sqlalchemy import func, case
+from services.projects_registry import get_projects, ProjectsRegistryError
 
 attendance_bp = Blueprint('attendance', __name__)
 
@@ -426,10 +427,36 @@ def get_teams():
 
 
 @attendance_bp.route('/api/projects', methods=['GET'])
-def get_projects():
-    """Get list of unique projects."""
+def get_distinct_projects():
+    """Get list of unique project values already recorded in attendance.
+
+    Used by the Summary tab as a historical filter (it should only list
+    projects that actually have data). The Mark flow uses the live registry
+    endpoint below instead.
+    """
     projects = db.session.query(Attendance.project).distinct().filter(Attendance.project.isnot(None)).all()
     return jsonify([p[0] for p in projects if p[0]])
+
+
+@attendance_bp.route('/api/projects/registry', methods=['GET'])
+def get_projects_registry():
+    """Live list of selectable projects from the shared VISMA registry.
+
+    Returns {"projects": [{"id", "value"}...], "stale": bool}. `stale` is true
+    when the registry DB was unreachable and we served the last cached list.
+    If the DB is unreachable and nothing is cached, returns 503 with an error
+    so the UI can show a clear message — it never falls back to free text.
+    """
+    try:
+        result = get_projects()
+    except ProjectsRegistryError as exc:
+        return jsonify({
+            'projects': [],
+            'stale': True,
+            'error': 'Projects registry is unavailable. Please try again shortly.',
+            'detail': str(exc),
+        }), 503
+    return jsonify(result)
 
 
 @attendance_bp.route('/api/attendance/summary', methods=['GET'])

@@ -41,10 +41,33 @@ def get_database_url():
     return 'mysql+pymysql://root:@localhost/visma_attendance'
 
 
+def get_projects_db_url():
+    """Build the read-only URL for the shared VISMA projects registry DB.
+
+    Returns None if the connection isn't configured, so the registry service
+    can surface a clear error instead of guessing at a default.
+    """
+    host = os.environ.get('PROJECTS_DB_HOST')
+    port = os.environ.get('PROJECTS_DB_PORT') or '3306'
+    user = os.environ.get('PROJECTS_DB_USER')
+    password = os.environ.get('PROJECTS_DB_PASSWORD') or ''
+    database = os.environ.get('PROJECTS_DB_NAME')
+
+    if not all([host, user, database]):
+        return None
+    return f'mysql+pymysql://{user}:{password}@{host}:{port}/{database}'
+
+
 class Config:
     """Base configuration."""
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key')
+
+    # Read-only connection to the shared VISMA projects registry (may be None
+    # if not configured; the registry service handles that case explicitly).
+    PROJECTS_DB_URL = get_projects_db_url()
+    # How long (seconds) the projects list is cached before re-querying.
+    PROJECTS_CACHE_TTL = int(os.environ.get('PROJECTS_CACHE_TTL', '60'))
 
 
 class DevelopmentConfig(Config):

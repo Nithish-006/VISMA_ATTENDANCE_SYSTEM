@@ -8,7 +8,11 @@
 let supervisors = [];
 let selectedSupervisorId = null;
 let allWorkers = [];                  // from /api/labours
-let projectsList = [];
+let projectsList = [];                // [{id, value}] from the live VISMA registry
+let projectValues = new Set();        // canonical "{id} - {stem_name}" strings, for validation
+let projectRegistryError = null;      // message when the registry DB is unreachable
+let projectRegistryStale = false;     // true when serving a cached (not live) list
+let comboActiveIndex = -1;            // highlighted option in the open list
 let markedWorkerIds = new Set();      // workers marked on the selected day by ANY supervisor
 let initialPersistedIds = new Set();  // workers this supervisor already had saved for the selected day
 let entries = [];                     // working list: {worker_id, name, designation, project, status, ot_hours}
@@ -30,7 +34,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('supervisorForm').addEventListener('submit', addSupervisor);
     document.getElementById('addEntryBtn').addEventListener('click', addEntry);
     document.getElementById('finishBtn').addEventListener('click', finishAttendance);
-    document.getElementById('entryProject').addEventListener('change', onEntryProjectChange);
+    initProjectCombo();
 
     // Present / Absent toggle
     document.querySelectorAll('#entryStatusToggle .status-btn').forEach(btn => {
@@ -110,14 +114,29 @@ async function loadWorkers() {
     }
 }
 
+// Load the selectable projects live from the shared VISMA registry. On failure
+// we surface a clear error (and keep whatever was last loaded) — we never fall
+// back to free text.
 async function loadProjects() {
     try {
-        const res = await fetch('/api/projects');
-        projectsList = await res.json();
+        const res = await fetch('/api/projects/registry');
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+            projectsList = Array.isArray(data.projects) ? data.projects : [];
+            projectValues = new Set(projectsList.map(p => p.value));
+            projectRegistryStale = !!data.stale;
+            projectRegistryError = null;
+        } else {
+            // 503 with no cache available: registry truly unreachable.
+            projectRegistryError = data.error || 'Project registry unavailable.';
+            if (!projectsList.length) projectValues = new Set();
+        }
     } catch (e) {
-        projectsList = [];
+        projectRegistryError = 'Could not reach the project registry.';
         console.error('Failed to load projects:', e);
     }
+    updateProjectComboState();
 }
 
 async function loadTeamsDatalist() {
@@ -178,7 +197,7 @@ async function loadRoster() {
         initialPersistedIds = new Set(entries.map(e => e.worker_id));
 
         populateWorkerSelect();
-        populateProjectSelect();
+        updateProjectComboState();
         renderEntries();
     } catch (e) {
         console.error('Failed to load roster:', e);
@@ -199,30 +218,171 @@ function populateWorkerSelect() {
         }).join('');
 }
 
-function populateProjectSelect() {
-    const sel = document.getElementById('entryProject');
-    const current = sel.value;
-    sel.innerHTML = '<option value="">-- Select project --</option>' +
-        projectsList.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('') +
-        '<option value="__new__">+ Add New Project</option>';
-    if (current && current !== '__new__' && projectsList.includes(current)) {
-        sel.value = current;
+// ============================================
+// PROJECT COMBOBOX (searchable, selection-only)
+//
+// A text input filters the live registry list; a value is only committed by
+// picking a list item (click / Enter). The hidden #entryProject holds the
+// canonical "{id} - {stem_name}" string. Typing never stores free text.
+// ============================================
+
+function initProjectCombo() {
+    const search = document.getElementById('projectSearch');
+    const combo = document.getElementById('projectCombo');
+
+    // Note element for stale / unavailable messages.
+    const note = document.createElement('div');
+    note.id = 'projectComboNote';
+    note.className = 'combo-note';
+    note.style.display = 'none';
+    combo.appendChild(note);
+
+    search.addEventListener('focus', () => openProjectList());
+    search.addEventListener('input', () => {
+        // Any edit invalidates a prior selection until a list item is chosen.
+        setProjectValue('');
+        openProjectList();
+    });
+    search.addEventListener('keydown', onProjectComboKeydown);
+
+    // Delegated selection — mousedown fires before the input's blur so the
+    // pick lands before the list would otherwise close.
+    document.getElementById('projectComboList').addEventListener('mousedown', (e) => {
+        const opt = e.target.closest('.combo-option');
+        if (!opt) return;
+        e.preventDefault();
+        selectProject(opt.dataset.value);
+    });
+
+    // Close when clicking outside the combo.
+    document.addEventListener('click', (e) => {
+        if (!combo.contains(e.target)) closeProjectList(true);
+    });
+
+    updateProjectComboState();
+}
+
+// Reflect registry availability in the combo: disable + message when the
+// registry is unreachable with nothing cached; subtle note when stale.
+function updateProjectComboState() {
+    const search = document.getElementById('projectSearch');
+    const note = document.getElementById('projectComboNote');
+    if (!search || !note) return;
+
+    const unavailable = !!projectRegistryError && projectsList.length === 0;
+
+    search.disabled = unavailable;
+    search.placeholder = unavailable ? 'Project registry unavailable' : '-- Select project --';
+
+    if (unavailable) {
+        note.textContent = projectRegistryError;
+        note.className = 'combo-note error';
+        note.style.display = 'block';
+    } else if (projectRegistryError) {
+        note.textContent = 'Registry unreachable — showing last cached list.';
+        note.className = 'combo-note error';
+        note.style.display = 'block';
+    } else if (projectRegistryStale) {
+        note.textContent = 'Showing cached project list.';
+        note.className = 'combo-note';
+        note.style.display = 'block';
+    } else {
+        note.style.display = 'none';
     }
 }
 
-function onEntryProjectChange() {
-    const sel = document.getElementById('entryProject');
-    if (sel.value === '__new__') {
-        const np = prompt('Enter new project name:');
-        if (np && np.trim()) {
-            const trimmed = np.trim();
-            if (!projectsList.includes(trimmed)) projectsList.push(trimmed);
-            populateProjectSelect();
-            sel.value = trimmed;
-        } else {
-            sel.value = '';
-        }
+function openProjectList() {
+    if (document.getElementById('projectSearch').disabled) return;
+    renderProjectOptions();
+    document.getElementById('projectComboList').style.display = 'block';
+    document.getElementById('projectSearch').setAttribute('aria-expanded', 'true');
+}
+
+// resetText: when true, snap the search box back to the selected value (or
+// blank) so a half-typed, uncommitted query never lingers on screen.
+function closeProjectList(resetText) {
+    const list = document.getElementById('projectComboList');
+    list.style.display = 'none';
+    comboActiveIndex = -1;
+    document.getElementById('projectSearch').setAttribute('aria-expanded', 'false');
+    if (resetText) {
+        const selected = document.getElementById('entryProject').value;
+        document.getElementById('projectSearch').value = selected;
     }
+}
+
+function filteredProjects() {
+    const q = document.getElementById('projectSearch').value.trim().toLowerCase();
+    if (!q) return projectsList;
+    return projectsList.filter(p => p.value.toLowerCase().includes(q));
+}
+
+function renderProjectOptions() {
+    const list = document.getElementById('projectComboList');
+    const matches = filteredProjects();
+    comboActiveIndex = -1;
+
+    if (projectRegistryError && projectsList.length === 0) {
+        list.innerHTML = `<div class="combo-empty error">${escapeHtml(projectRegistryError)}</div>`;
+        return;
+    }
+    if (matches.length === 0) {
+        list.innerHTML = '<div class="combo-empty">No matching projects.</div>';
+        return;
+    }
+
+    list.innerHTML = matches.map((p, i) =>
+        `<div class="combo-option" role="option" data-value="${escapeAttr(p.value)}" data-index="${i}">${escapeHtml(p.value)}</div>`
+    ).join('');
+}
+
+function selectProject(value) {
+    setProjectValue(value);
+    document.getElementById('projectSearch').value = value;
+    closeProjectList(false);
+}
+
+// Single source of truth for the committed value (the hidden input).
+function setProjectValue(value) {
+    document.getElementById('entryProject').value = value || '';
+    document.getElementById('projectCombo').classList.remove('is-invalid');
+}
+
+function onProjectComboKeydown(e) {
+    const list = document.getElementById('projectComboList');
+    if (list.style.display === 'none' && ['ArrowDown', 'ArrowUp'].includes(e.key)) {
+        openProjectList();
+        return;
+    }
+    const options = Array.from(list.querySelectorAll('.combo-option'));
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        comboActiveIndex = Math.min(comboActiveIndex + 1, options.length - 1);
+        highlightActiveOption(options);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        comboActiveIndex = Math.max(comboActiveIndex - 1, 0);
+        highlightActiveOption(options);
+    } else if (e.key === 'Enter') {
+        if (comboActiveIndex >= 0 && options[comboActiveIndex]) {
+            e.preventDefault();
+            selectProject(options[comboActiveIndex].dataset.value);
+        }
+    } else if (e.key === 'Escape') {
+        closeProjectList(true);
+    }
+}
+
+function highlightActiveOption(options) {
+    options.forEach((o, i) => o.classList.toggle('active', i === comboActiveIndex));
+    if (options[comboActiveIndex]) {
+        options[comboActiveIndex].scrollIntoView({ block: 'nearest' });
+    }
+}
+
+function escapeAttr(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
 // ============================================
@@ -233,12 +393,19 @@ function addEntry() {
     const wSel = document.getElementById('entryWorker');
     const workerId = wSel.value ? parseInt(wSel.value) : null;
     const project = document.getElementById('entryProject').value;
+    const projectSearch = document.getElementById('projectSearch').value.trim();
     let ot = parseFloat(document.getElementById('entryOT').value) || 0;
     ot = Math.min(8, Math.max(0, ot));
 
     if (!workerId) { showMessage('Please choose a worker.', 'error'); return; }
     if (!entryStatus) { showMessage('Please mark Present (P) or Absent (A).', 'error'); return; }
-    if (project === '__new__') { showMessage('Please choose a valid project.', 'error'); return; }
+    // Blank is allowed, but a typed-but-not-selected query is not — it would
+    // otherwise be silently dropped. Force the user to pick from the list.
+    if (!project && projectSearch) {
+        document.getElementById('projectCombo').classList.add('is-invalid');
+        showMessage('Please select a project from the list.', 'error');
+        return;
+    }
 
     const opt = wSel.options[wSel.selectedIndex];
     entries.push({
@@ -271,7 +438,11 @@ function editEntry(index) {
     renderEntries();
 
     document.getElementById('entryWorker').value = e.worker_id;
-    document.getElementById('entryProject').value = projectsList.includes(e.project) ? e.project : '';
+    // Preselect only if the stored value still exists in the registry; a
+    // legacy/unmatched value is cleared so the user re-picks a canonical one.
+    const known = projectValues.has(e.project) ? e.project : '';
+    setProjectValue(known);
+    document.getElementById('projectSearch').value = known;
     document.getElementById('entryOT').value = e.ot_hours;
     entryStatus = e.status;
     document.querySelectorAll('#entryStatusToggle .status-btn').forEach(b => {
@@ -283,7 +454,9 @@ function editEntry(index) {
 
 function resetEntryForm() {
     document.getElementById('entryWorker').value = '';
-    document.getElementById('entryProject').value = '';
+    setProjectValue('');
+    document.getElementById('projectSearch').value = '';
+    closeProjectList(false);
     document.getElementById('entryOT').value = 0;
     entryStatus = null;
     document.querySelectorAll('#entryStatusToggle .status-btn').forEach(b => b.classList.remove('active'));

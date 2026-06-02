@@ -64,7 +64,7 @@ class Attendance(db.Model):
     # 'H' is retained for legacy data; new marking only uses 'P'/'A'.
     status = db.Column(db.Enum('P', 'A', 'H', name='attendance_status'), default='A')
     ot_hours = db.Column(db.Numeric(4, 2), default=0)
-    project = db.Column(db.String(100))
+    project = db.Column(db.String(300))  # holds canonical "{id} - {stem_name}"
     supervisor_id = db.Column(db.Integer)  # who marked it (nullable for legacy records)
 
     __table_args__ = (

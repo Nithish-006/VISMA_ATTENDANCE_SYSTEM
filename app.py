@@ -18,13 +18,25 @@ def run_migrations(app):
             inspector = inspect(db.engine)
             if 'attendance' not in inspector.get_table_names():
                 return
-            columns = [c['name'] for c in inspector.get_columns('attendance')]
+            columns = {c['name']: c for c in inspector.get_columns('attendance')}
             if 'supervisor_id' not in columns:
                 db.session.execute(
                     text('ALTER TABLE attendance ADD COLUMN supervisor_id INTEGER NULL')
                 )
                 db.session.commit()
                 app.logger.info("Migration: added attendance.supervisor_id")
+
+            # Canonical project values ("{id} - {stem_name}") can exceed the
+            # original VARCHAR(100), since stem_name alone is up to 255 chars.
+            # Widen the column if it's still too narrow.
+            project_col = columns.get('project')
+            project_len = getattr(getattr(project_col, 'type', None), 'length', None) if project_col else None
+            if project_col is not None and (project_len is None or project_len < 300):
+                db.session.execute(
+                    text('ALTER TABLE attendance MODIFY COLUMN project VARCHAR(300)')
+                )
+                db.session.commit()
+                app.logger.info("Migration: widened attendance.project to VARCHAR(300)")
         except Exception as e:
             db.session.rollback()
             app.logger.error(f"Migration failed: {e}")

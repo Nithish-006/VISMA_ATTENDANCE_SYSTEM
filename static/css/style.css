@@ -2860,6 +2860,71 @@ select.edit-input {
     padding: 0 28px;
 }
 
+/* Searchable project combobox */
+.combo {
+    position: relative;
+}
+
+.combo-search {
+    width: 100%;
+}
+
+.combo.is-invalid .combo-search {
+    border-color: var(--danger, #e5484d);
+}
+
+.combo-list {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 50;
+    max-height: 260px;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    padding: 4px;
+}
+
+.combo-option {
+    padding: 9px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 0.9375rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.combo-option:hover,
+.combo-option.active {
+    background: var(--accent-glow, rgba(0, 0, 0, 0.06));
+}
+
+.combo-empty {
+    padding: 10px 12px;
+    font-size: 0.875rem;
+    color: var(--text-tertiary);
+}
+
+.combo-empty.error {
+    color: var(--danger, #e5484d);
+    font-weight: 600;
+}
+
+.combo-note {
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.combo-note.error {
+    color: var(--danger, #e5484d);
+}
+
 /* Marked workers list */
 .marked-list-header {
     display: flex;
