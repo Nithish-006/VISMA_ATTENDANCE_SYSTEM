@@ -684,6 +684,15 @@ body {
     flex-shrink: 0;
 }
 
+/* Add-worker button: icon + label so supervisors can find it at a glance */
+.btn-add-worker {
+    flex-shrink: 0;
+}
+
+.btn-add-worker svg {
+    flex-shrink: 0;
+}
+
 /* Saving spinner */
 .saving-spinner {
     width: 18px;
@@ -2497,6 +2506,13 @@ tr.total-row td {
         height: 46px;
     }
 
+    /* Add-worker button spans the row so it's an obvious, easy tap target */
+    .control-group .btn-add-worker {
+        width: 100%;
+        height: 46px;
+        justify-content: center;
+    }
+
     /* Progress counter - inline badge */
     .progress-counter {
         font-size: 0.75rem;
@@ -3369,6 +3385,44 @@ select.edit-input {
 
     .sup-select-group .btn {
         flex-shrink: 0;
+    }
+
+    /* --- "Marking for" day picker: a clean, full-width segmented control ---
+       On phones the old right-aligned mini-toggle read as misplaced. Give it
+       its own divided row, a prominent two-up Today/Yesterday switch, and the
+       resolved date underneath as confirmation. */
+    .mark-date-display {
+        width: 100%;
+        align-items: stretch;
+        gap: 8px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border-light);
+    }
+
+    .mark-date-label {
+        text-align: center;
+    }
+
+    .mark-day-toggle {
+        display: flex;
+        width: 100%;
+        margin: 0;
+        gap: 6px;
+        padding: 4px;
+    }
+
+    .mark-day-toggle .day-btn {
+        flex: 1;
+        padding: 12px 0;
+        font-size: 0.9375rem;
+        text-align: center;
+    }
+
+    .mark-date-display strong {
+        text-align: center;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-secondary);
     }
 
     /* --- Mark entry card: easy stacked form (no overflow) --- */
