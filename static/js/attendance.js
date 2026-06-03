@@ -402,11 +402,18 @@ function addEntry() {
     if (!workerId) { showMessage('Please choose a worker.', 'error'); return; }
     if (!work) { showMessage('Please choose the work done.', 'error'); return; }
     if (!entryStatus) { showMessage('Please mark Present (P) or Absent (A).', 'error'); return; }
-    // Blank is allowed, but a typed-but-not-selected query is not — it would
-    // otherwise be silently dropped. Force the user to pick from the list.
+    // A typed-but-not-selected query is not allowed — it would otherwise be
+    // silently dropped. Force the user to pick from the list.
     if (!project && projectSearch) {
         document.getElementById('projectCombo').classList.add('is-invalid');
         showMessage('Please select a project from the list.', 'error');
+        return;
+    }
+    // A present worker must be assigned to a project so their labor cost can be
+    // attributed; absent workers don't need one.
+    if (entryStatus === 'P' && !project) {
+        document.getElementById('projectCombo').classList.add('is-invalid');
+        showMessage('Please select a project for a present worker.', 'error');
         return;
     }
 

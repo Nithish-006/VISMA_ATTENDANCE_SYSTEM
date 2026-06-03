@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models import db, Salary, Attendance
+from models import db, Salary, Attendance, Worker
 from decimal import Decimal
 from sqlalchemy import func, case
 import calendar
@@ -102,7 +102,17 @@ def update_salary(record_id):
 
 @salary_bp.route('/api/salary/worker/<int:worker_id>', methods=['PUT'])
 def update_worker_salary(worker_id):
-    """Update worker details across all monthly salary records."""
+    """Update worker details.
+
+    The Worker master is the single source of truth and is updated here. The
+    per-month salary snapshots are then kept in sync so the monthly salary view
+    stays consistent — this preserves prior behaviour: a name/designation change
+    is reflected across all months, and a base-pay change recalculates every
+    month's total.
+
+    NOTE: retroactively re-pricing finalized past months on a base-pay change is
+    pointer #2; it is intentionally left as-is here pending that decision.
+    """
     data = request.get_json()
     base_salary = data.get('base_salary_per_day')
     designation = data.get('designation')
@@ -111,19 +121,25 @@ def update_worker_salary(worker_id):
     if base_salary is None and designation is None and name is None:
         return jsonify({'error': 'At least one field (name, designation, base_salary_per_day) is required'}), 400
 
-    # Get all salary records for this worker
-    records = Salary.query.filter_by(worker_id=worker_id).all()
-
-    if not records:
+    worker = Worker.query.get(worker_id)
+    if worker is None:
         return jsonify({'error': 'Worker not found'}), 404
 
-    # Update all records
+    # 1. Update the master record (authoritative).
+    if name is not None:
+        worker.name = name
+    if designation is not None:
+        worker.designation = designation
+    if base_salary is not None:
+        worker.base_salary_per_day = base_salary
+
+    # 2. Keep the monthly salary snapshots in sync.
+    records = Salary.query.filter_by(worker_id=worker_id).all()
     for salary in records:
         if name is not None:
             salary.name = name
         if designation is not None:
             salary.designation = designation
-
         if base_salary is not None:
             salary.base_salary_per_day = base_salary
             base_pay = salary.total_working_days * float(base_salary)
@@ -132,7 +148,7 @@ def update_worker_salary(worker_id):
 
     db.session.commit()
 
-    return jsonify({'message': f'Updated {len(records)} records', 'worker_id': worker_id})
+    return jsonify({'message': f'Updated worker {worker_id} ({len(records)} months synced)', 'worker_id': worker_id})
 
 
 @salary_bp.route('/api/salary/worker/<int:worker_id>', methods=['DELETE'])
@@ -140,17 +156,22 @@ def delete_worker(worker_id):
     """Delete a worker and all their attendance and salary records."""
     salary_records = Salary.query.filter_by(worker_id=worker_id).all()
     attendance_records = Attendance.query.filter_by(worker_id=worker_id).all()
+    worker = Worker.query.get(worker_id)
 
-    if not salary_records and not attendance_records:
+    if not salary_records and not attendance_records and worker is None:
         return jsonify({'error': 'Worker not found'}), 404
 
     salary_count = len(salary_records)
     attendance_count = len(attendance_records)
 
+    # Delete children before the parent so the worker FK (RESTRICT) is satisfied.
     for record in attendance_records:
         db.session.delete(record)
     for record in salary_records:
         db.session.delete(record)
+    db.session.flush()
+    if worker is not None:
+        db.session.delete(worker)
 
     db.session.commit()
 

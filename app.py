@@ -54,6 +54,29 @@ def run_migrations(app):
                 )
                 db.session.commit()
                 app.logger.info("Migration: widened attendance.project to VARCHAR(300)")
+
+            # Audit columns. create_all() adds these to the new `worker` table
+            # but never to the pre-existing attendance/salary tables, so add
+            # them explicitly. CURRENT_TIMESTAMP backfills existing rows with
+            # the time the column is added (best available for legacy rows).
+            for tbl in ('attendance', 'salary'):
+                if tbl not in inspector.get_table_names():
+                    continue
+                tbl_cols = {c['name'] for c in inspector.get_columns(tbl)}
+                if 'created_at' not in tbl_cols:
+                    db.session.execute(text(
+                        f'ALTER TABLE {tbl} ADD COLUMN created_at DATETIME NULL '
+                        f'DEFAULT CURRENT_TIMESTAMP'
+                    ))
+                    db.session.commit()
+                    app.logger.info(f"Migration: added {tbl}.created_at")
+                if 'updated_at' not in tbl_cols:
+                    db.session.execute(text(
+                        f'ALTER TABLE {tbl} ADD COLUMN updated_at DATETIME NULL '
+                        f'DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
+                    ))
+                    db.session.commit()
+                    app.logger.info(f"Migration: added {tbl}.updated_at")
         except Exception as e:
             db.session.rollback()
             app.logger.error(f"Migration failed: {e}")

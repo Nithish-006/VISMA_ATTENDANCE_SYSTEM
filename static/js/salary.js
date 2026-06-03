@@ -200,6 +200,7 @@ async function loadSalarySummary() {
                             <span class="pb-stat"><strong>${p.worker_count}</strong> workers</span>
                             <span class="pb-stat stat-present"><strong>${p.working_days}</strong> days</span>
                             <span class="pb-stat stat-ot"><strong>${p.ot_hours}</strong> OT hrs</span>
+                            <span class="pb-stat stat-success"><strong>${formatCurrency(p.labor_cost)}</strong> labor cost</span>
                         </div>
                     </div>
                 `;
@@ -439,14 +440,22 @@ async function exportExcel() {
             const totalSalaryAmt = monthWorkers.reduce((s, w) => s + (w.total_salary || 0), 0);
 
             // Project breakdown
+            const rateById = {};
+            monthWorkers.forEach(w => { rateById[w.worker_id] = w.base_salary_per_day || 0; });
+
             const projectStats = {};
             monthAttendance.forEach(a => {
                 const proj = a.project || 'Unassigned';
                 if (!projectStats[proj]) {
-                    projectStats[proj] = { workerIds: new Set(), presentDates: new Set(), otHours: 0 };
+                    projectStats[proj] = { workerIds: new Set(), presentDates: new Set(), otHours: 0, laborCost: 0 };
                 }
                 projectStats[proj].workerIds.add(a.worker_id);
-                if (a.status === 'P') projectStats[proj].presentDates.add(a.date);
+                if (a.status === 'P') {
+                    projectStats[proj].presentDates.add(a.date);
+                    // base day-rate + overtime at the per-hour rate (rate/8)
+                    const rate = rateById[a.worker_id] || 0;
+                    projectStats[proj].laborCost += rate + (rate / 8) * (a.ot_hours || 0);
+                }
                 projectStats[proj].otHours += (a.ot_hours || 0);
             });
 
@@ -478,9 +487,9 @@ async function exportExcel() {
 
             // Project breakdown
             summaryRows.push(['PROJECT BREAKDOWN']);
-            summaryRows.push(['Project', 'Workers', 'Working Days', 'OT Hours']);
+            summaryRows.push(['Project', 'Workers', 'Working Days', 'OT Hours', 'Labor Cost']);
             for (const [proj, stats] of Object.entries(projectStats).sort()) {
-                summaryRows.push([proj, stats.workerIds.size, stats.presentDates.size, Math.round(stats.otHours * 100) / 100]);
+                summaryRows.push([proj, stats.workerIds.size, stats.presentDates.size, Math.round(stats.otHours * 100) / 100, Math.round(stats.laborCost * 100) / 100]);
             }
 
             // Blank separator

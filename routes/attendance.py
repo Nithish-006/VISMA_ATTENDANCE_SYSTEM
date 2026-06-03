@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models import db, Attendance, Salary, Supervisor
+from models import db, Attendance, Salary, Supervisor, Worker
 from datetime import datetime, timedelta
 from sqlalchemy import func, case
 from services.projects_registry import get_projects, ProjectsRegistryError
@@ -8,20 +8,15 @@ attendance_bp = Blueprint('attendance', __name__)
 
 
 def _worker_info_map(worker_ids):
-    """Return {worker_id: latest Salary record} for the given worker ids."""
+    """Return {worker_id: Worker} for the given worker ids.
+
+    Worker is the single source of truth for identity (name/designation/rate);
+    callers use .name/.designation/.base_salary_per_day off the returned rows.
+    """
     if not worker_ids:
         return {}
-    subquery = db.session.query(
-        Salary.worker_id,
-        func.max(Salary.year * 100 + Salary.month).label('max_period')
-    ).filter(Salary.worker_id.in_(worker_ids)).group_by(Salary.worker_id).subquery()
-
-    workers = db.session.query(Salary).join(
-        subquery,
-        (Salary.worker_id == subquery.c.worker_id) &
-        (Salary.year * 100 + Salary.month == subquery.c.max_period)
-    ).all()
-    return {w.worker_id: w for w in workers}
+    workers = Worker.query.filter(Worker.id.in_(worker_ids)).all()
+    return {w.id: w for w in workers}
 
 
 # Attendance is normally marked on the day itself, but supervisors only learn
@@ -110,24 +105,14 @@ def get_day_roster(date_str):
 
 @attendance_bp.route('/api/labours', methods=['GET'])
 def get_labours():
-    """Get list of all unique workers (latest record per worker)."""
-    # Get the most recent record for each worker
-    subquery = db.session.query(
-        Salary.worker_id,
-        func.max(Salary.year * 100 + Salary.month).label('max_period')
-    ).group_by(Salary.worker_id).subquery()
-
-    workers = db.session.query(Salary).join(
-        subquery,
-        (Salary.worker_id == subquery.c.worker_id) &
-        (Salary.year * 100 + Salary.month == subquery.c.max_period)
-    ).order_by(Salary.name).all()
+    """Get list of all workers (from the Worker master, alphabetical)."""
+    workers = Worker.query.filter_by(active=True).order_by(Worker.name).all()
 
     result = []
     for w in workers:
-        last_att = Attendance.query.filter_by(worker_id=w.worker_id).order_by(Attendance.date.desc()).first()
+        last_att = Attendance.query.filter_by(worker_id=w.id).order_by(Attendance.date.desc()).first()
         result.append({
-            'worker_id': w.worker_id,
+            'worker_id': w.id,
             'name': w.name,
             'designation': w.designation,
             'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
@@ -140,15 +125,12 @@ def get_labours():
 @attendance_bp.route('/api/labours/<int:worker_id>/history', methods=['GET'])
 def get_labour_history(worker_id):
     """Get complete attendance history for a worker."""
-    # Get latest worker info
-    worker = Salary.query.filter_by(worker_id=worker_id).order_by(
-        Salary.year.desc(), Salary.month.desc()
-    ).first_or_404()
+    worker = Worker.query.get_or_404(worker_id)
 
     records = Attendance.query.filter_by(worker_id=worker_id).order_by(Attendance.date.desc()).all()
 
     return jsonify({
-        'worker_id': worker.worker_id,
+        'worker_id': worker.id,
         'name': worker.name,
         'designation': worker.designation,
         'base_salary_per_day': float(worker.base_salary_per_day) if worker.base_salary_per_day else 0,
@@ -165,17 +147,8 @@ def get_attendance_by_date(date_str):
     except ValueError:
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
 
-    # Get unique workers (latest record per worker)
-    subquery = db.session.query(
-        Salary.worker_id,
-        func.max(Salary.year * 100 + Salary.month).label('max_period')
-    ).group_by(Salary.worker_id).subquery()
-
-    workers = db.session.query(Salary).join(
-        subquery,
-        (Salary.worker_id == subquery.c.worker_id) &
-        (Salary.year * 100 + Salary.month == subquery.c.max_period)
-    ).order_by(Salary.name).all()
+    # Get all workers from the master table (alphabetical)
+    workers = Worker.query.filter_by(active=True).order_by(Worker.name).all()
 
     # Get attendance for the date
     attendance_map = {
@@ -184,15 +157,15 @@ def get_attendance_by_date(date_str):
 
     result = []
     for w in workers:
-        att = attendance_map.get(w.worker_id)
+        att = attendance_map.get(w.id)
         result.append({
-            'worker_id': w.worker_id,
+            'worker_id': w.id,
             'name': w.name,
             'designation': w.designation,
             'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
             'attendance': att.to_dict() if att else {
                 'id': None,
-                'worker_id': w.worker_id,
+                'worker_id': w.id,
                 'date': date_str,
                 'status': 'A',
                 'ot_hours': 0,
@@ -214,12 +187,18 @@ def mark_attendance():
     data = request.get_json()
 
     # Guard: every record must fall within the marking window (today/yesterday)
+    # and a present worker must be assigned to a project (so labor cost can be
+    # attributed). Absent workers don't require a project.
     records_to_check = data if isinstance(data, list) else [data]
     for rec in records_to_check:
         if not isinstance(rec, dict) or not _is_within_marking_window(rec.get('date')):
             return jsonify({
                 'error': 'Attendance can only be marked or edited for today or yesterday.'
             }), 403
+        if rec.get('status') == 'P' and not str(rec.get('project') or '').strip():
+            return jsonify({
+                'error': 'A project is required when marking a worker present.'
+            }), 400
 
     if isinstance(data, list):
         results = []
@@ -318,10 +297,8 @@ def _upsert_attendance(data):
 def _recalculate_monthly_salaries(affected_periods):
     """Recalculate salary for affected (worker_id, year, month) combinations."""
     for worker_id, year, month in affected_periods:
-        # Get worker info from most recent salary record
-        worker_info = Salary.query.filter_by(worker_id=worker_id).order_by(
-            Salary.year.desc(), Salary.month.desc()
-        ).first()
+        # Identity (name/designation/current rate) comes from the Worker master.
+        worker_info = Worker.query.get(worker_id)
 
         if not worker_info:
             continue
@@ -371,26 +348,36 @@ def _recalculate_monthly_salaries(affected_periods):
 
 @attendance_bp.route('/api/labours', methods=['POST'])
 def add_labour():
-    """Add a new worker."""
+    """Add a new worker.
+
+    Creates the Worker master row — its id is a real auto-increment PK, so the
+    old race-prone max(worker_id)+1 is gone. A zeroed salary row for the current
+    month is also seeded so the worker shows up immediately in the monthly
+    salary view, exactly as before.
+    """
     data = request.get_json()
 
     name = data.get('name')
     base_salary = data.get('base_salary_per_day', 0)
+    designation = data.get('designation')
 
     if not name:
         return jsonify({'error': 'name is required'}), 400
 
-    # Get next worker_id
-    max_id = db.session.query(func.max(Salary.worker_id)).scalar() or 0
-    new_id = max_id + 1
-
-    # Get current month/year
-    now = datetime.now()
-
-    salary = Salary(
-        worker_id=new_id,
+    worker = Worker(
         name=name,
-        designation=data.get('designation'),
+        designation=designation,
+        base_salary_per_day=base_salary,
+        active=True,
+    )
+    db.session.add(worker)
+    db.session.flush()  # assign worker.id before the salary row references it
+
+    now = datetime.now()
+    salary = Salary(
+        worker_id=worker.id,
+        name=name,
+        designation=designation,
         base_salary_per_day=base_salary,
         year=now.year,
         month=now.month,
@@ -401,7 +388,7 @@ def add_labour():
     db.session.add(salary)
     db.session.commit()
 
-    return jsonify(salary.to_dict()), 201
+    return jsonify(worker.to_dict()), 201
 
 
 @attendance_bp.route('/api/projects', methods=['GET'])
@@ -471,20 +458,9 @@ def get_attendance_summary():
     worker_ids = list(set(r.worker_id for r in records))
     worker_info_map = {}
     if worker_ids:
-        # Get latest salary record per worker for name/designation info
-        subquery = db.session.query(
-            Salary.worker_id,
-            func.max(Salary.year * 100 + Salary.month).label('max_period')
-        ).filter(Salary.worker_id.in_(worker_ids)).group_by(Salary.worker_id).subquery()
-
-        workers = db.session.query(Salary).join(
-            subquery,
-            (Salary.worker_id == subquery.c.worker_id) &
-            (Salary.year * 100 + Salary.month == subquery.c.max_period)
-        ).all()
-
-        for w in workers:
-            worker_info_map[w.worker_id] = {
+        # Identity (name/designation/rate) comes from the Worker master.
+        for w in Worker.query.filter(Worker.id.in_(worker_ids)).all():
+            worker_info_map[w.id] = {
                 'name': w.name,
                 'designation': w.designation,
                 'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0
@@ -512,10 +488,14 @@ def get_attendance_summary():
         # Project aggregation - only include present workers
         if r.status == 'P':
             if proj not in project_data:
-                project_data[proj] = {'worker_ids': set(), 'present_dates': set(), 'ot_hours': 0}
+                project_data[proj] = {'worker_ids': set(), 'present_dates': set(), 'ot_hours': 0, 'labor_cost': 0.0}
             project_data[proj]['worker_ids'].add(r.worker_id)
             project_data[proj]['present_dates'].add(r.date)
             project_data[proj]['ot_hours'] += ot
+            # Labor cost for this present-day: base day-rate plus overtime paid
+            # at the per-hour rate (rate/8), matching the salary calculation.
+            rate = worker_info_map.get(r.worker_id, {}).get('base_salary_per_day', 0)
+            project_data[proj]['labor_cost'] += rate + (rate / 8) * ot
             # Track this worker as present
             present_workers.add(r.worker_id)
 
@@ -569,7 +549,8 @@ def get_attendance_summary():
             'name': name,
             'worker_count': len(data['worker_ids']),
             'working_days': len(data['present_dates']),
-            'ot_hours': round(data['ot_hours'], 2)
+            'ot_hours': round(data['ot_hours'], 2),
+            'labor_cost': round(data['labor_cost'], 2)
         })
 
     daily_list = []
@@ -630,14 +611,14 @@ def export_attendance():
     """Get all attendance records for export."""
     project = request.args.get('project', '').strip()
 
-    # Get all attendance records with worker info
+    # Get all attendance records with worker info (identity from Worker master)
     query = db.session.query(
         Attendance,
-        Salary.name,
-        Salary.designation
+        Worker.name,
+        Worker.designation
     ).join(
-        Salary,
-        (Attendance.worker_id == Salary.worker_id)
+        Worker,
+        (Attendance.worker_id == Worker.id)
     )
 
     if project:
@@ -647,7 +628,7 @@ def export_attendance():
         Attendance.id
     ).order_by(
         Attendance.date.desc(),
-        Salary.name
+        Worker.name
     ).all()
 
     # Remove duplicates (keep first occurrence per attendance record)

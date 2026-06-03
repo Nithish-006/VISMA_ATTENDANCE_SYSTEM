@@ -4,12 +4,50 @@ from datetime import datetime
 db = SQLAlchemy()
 
 
+class Worker(db.Model):
+    """Master record for a worker — the single source of truth for identity.
+
+    Name, designation and the current default day-rate live here in exactly
+    ONE row. The monthly `salary` rows and daily `attendance` rows reference a
+    worker by id. Previously this identity was copied onto every monthly salary
+    row (so the worker "existed" only as a side effect of having salary rows),
+    which caused update anomalies and made editing a multi-row rewrite. Worker
+    normalizes that: edit once here, and it is the authoritative source.
+
+    The per-month `salary.base_salary_per_day` is intentionally retained as the
+    historical rate actually paid that month; this column is the *current*
+    default rate used when computing new/recalculated months.
+    """
+    __tablename__ = 'worker'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(100), nullable=False)
+    designation = db.Column(db.String(50))
+    base_salary_per_day = db.Column(db.Numeric(10, 2), default=0)
+    # Soft-delete flag. Wage history should not be destroyed outright; this lets
+    # a worker be hidden without deleting their records. (The delete endpoint
+    # still hard-deletes for now to preserve current behaviour — see routes.)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'worker_id': self.id,
+            'name': self.name,
+            'designation': self.designation,
+            'base_salary_per_day': float(self.base_salary_per_day) if self.base_salary_per_day else 0,
+            'active': self.active,
+        }
+
+
 class Salary(db.Model):
     """Monthly salary records - one row per worker per month."""
     __tablename__ = 'salary'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    worker_id = db.Column(db.Integer, nullable=False)
+    worker_id = db.Column(db.Integer, db.ForeignKey('worker.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     designation = db.Column(db.String(50))
     base_salary_per_day = db.Column(db.Numeric(10, 2), default=0)
@@ -18,6 +56,8 @@ class Salary(db.Model):
     total_working_days = db.Column(db.Integer, default=0)
     ot_hours = db.Column(db.Numeric(6, 2), default=0)
     total_salary = db.Column(db.Numeric(12, 2), default=0)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
     __table_args__ = (
         db.UniqueConstraint('worker_id', 'year', 'month', name='unique_worker_month'),
@@ -57,19 +97,21 @@ class Attendance(db.Model):
     __tablename__ = 'attendance'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    worker_id = db.Column(db.Integer, nullable=False)
+    worker_id = db.Column(db.Integer, db.ForeignKey('worker.id'), nullable=False)
     date = db.Column(db.Date, nullable=False)
     # 'H' is retained for legacy data; new marking only uses 'P'/'A'.
     status = db.Column(db.Enum('P', 'A', 'H', name='attendance_status'), default='A')
     ot_hours = db.Column(db.Numeric(4, 2), default=0)
     project = db.Column(db.String(300))  # holds canonical "{id} - {stem_name}"
-    supervisor_id = db.Column(db.Integer)  # who marked it (nullable for legacy records)
+    supervisor_id = db.Column(db.Integer, db.ForeignKey('supervisor.id'))  # who marked it (nullable for legacy records)
     # Role for this day — a snapshot of the worker's fixed designation at
     # marking time (the Mark UI copies it from the worker, it isn't chosen).
     role = db.Column(db.String(50))
     # The specific work done that day (e.g. welding, grinding). Unlike role,
     # work is elastic and chosen per attendance record at marking time.
     work = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
     __table_args__ = (
         db.UniqueConstraint('worker_id', 'date', name='unique_daily_attendance'),
