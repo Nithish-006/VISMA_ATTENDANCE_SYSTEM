@@ -247,7 +247,6 @@ async function loadSalarySummary() {
                         <thead>
                             <tr>
                                 <th>Name</th>
-                                <th>Team</th>
                                 <th class="right">Present</th>
                                 <th class="right">Absent</th>
                                 <th class="right">OT Hours</th>
@@ -259,7 +258,6 @@ async function loadSalarySummary() {
                             ${data.workers.map(w => `
                                 <tr class="worker-row" data-worker-id="${w.worker_id}" data-worker-name="${w.name}" style="cursor:pointer;">
                                     <td class="worker-name" data-label="Name">${w.name}</td>
-                                    <td data-label="Team">${w.team || '-'}</td>
                                     <td class="right" data-label="Present"><span class="stat-badge-sm present">${w.present_days}</span></td>
                                     <td class="right" data-label="Absent"><span class="stat-badge-sm absent">${w.absent_days}</span></td>
                                     <td class="right" data-label="OT Hours">${w.ot_hours}</td>
@@ -384,10 +382,10 @@ async function exportExcel() {
 
             // Build header rows
             const titleRow = [`LABOUR ATTENDANCE FOR ${sheetName}`];
-            // No worker-level DESIGNATION column: roles are elastic and shown
-            // per day in the Role sub-column below.
-            const headerRow1 = ['S. No', 'Name', 'TEAM'];
-            const headerRow2 = ['', '', ''];
+            // No worker-level columns beyond name: the role (= worker's fixed
+            // designation) and work are shown per day in the sub-columns below.
+            const headerRow1 = ['S. No', 'Name'];
+            const headerRow2 = ['', ''];
 
             for (let day = 1; day <= daysInMonth; day++) {
                 const date = new Date(year, monthNum - 1, day);
@@ -408,38 +406,29 @@ async function exportExcel() {
             const dataRows = [];
             let sNo = 1;
 
-            const teams = {};
             monthWorkers.forEach(w => {
-                const team = w.team || 'Unassigned';
-                if (!teams[team]) teams[team] = [];
-                teams[team].push(w);
-            });
+                const row = [sNo++, w.name];
 
-            for (const [team, workers] of Object.entries(teams)) {
-                workers.forEach(w => {
-                    const row = [sNo++, w.name, w.team || ''];
-
-                    for (let day = 1; day <= daysInMonth; day++) {
-                        const att = attendanceMap[w.worker_id]?.[day];
-                        if (att) {
-                            row.push(att.status, att.ot || '', att.project || '', att.role || '', att.work || '');
-                        } else {
-                            row.push('', '', '', '', '');
-                        }
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const att = attendanceMap[w.worker_id]?.[day];
+                    if (att) {
+                        row.push(att.status, att.ot || '', att.project || '', att.role || '', att.work || '');
+                    } else {
+                        row.push('', '', '', '', '');
                     }
+                }
 
-                    row.push(
-                        w.working_days,
-                        w.ot_hours,
-                        w.base_salary_per_day || 0,
-                        w.base_pay || 0,
-                        w.ot_pay || 0,
-                        w.total_salary
-                    );
+                row.push(
+                    w.working_days,
+                    w.ot_hours,
+                    w.base_salary_per_day || 0,
+                    w.base_pay || 0,
+                    w.ot_pay || 0,
+                    w.total_salary
+                );
 
-                    dataRows.push(row);
-                });
-            }
+                dataRows.push(row);
+            });
 
             // --- Summary sections below worker rows ---
 
@@ -515,8 +504,7 @@ async function exportExcel() {
 
             const cols = [
                 { wch: 5 },
-                { wch: 20 },
-                { wch: 10 }
+                { wch: 20 }
             ];
 
             for (let day = 1; day <= daysInMonth; day++) {
@@ -534,7 +522,7 @@ async function exportExcel() {
 
             sheet['!cols'] = cols;
             sheet['!merges'] = [
-                { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }
             ];
 
             XLSX.utils.book_append_sheet(wb, sheet, sheetName);
@@ -608,7 +596,6 @@ async function showAttendanceHistory(workerId, year, month, workerName) {
                 <div class="worker-info-bar">
                     <span class="info-chip"><strong>ID:</strong> ${data.worker_id}</span>
                     <span class="info-chip"><strong>Designation:</strong> ${data.designation || 'N/A'}</span>
-                    <span class="info-chip"><strong>Team:</strong> ${data.team || 'N/A'}</span>
                 </div>
                 <div class="empty-state">No attendance records found.</div>
             `;
@@ -619,7 +606,6 @@ async function showAttendanceHistory(workerId, year, month, workerName) {
             <div class="worker-info-bar">
                 <span class="info-chip"><strong>ID:</strong> ${data.worker_id}</span>
                 <span class="info-chip"><strong>Designation:</strong> ${data.designation || 'N/A'}</span>
-                <span class="info-chip"><strong>Team:</strong> ${data.team || 'N/A'}</span>
             </div>
 
             <div class="history-months">

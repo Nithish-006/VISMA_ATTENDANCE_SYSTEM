@@ -17,7 +17,7 @@ Factory attendance management system for supervisors to mark daily attendance, t
 ## Database Schema
 
 **Attendance Table**
-- id, date, name, designation, team, status (P/A/H), ot_hours, project
+- id, date, name, designation, status (P/A/H), ot_hours, project
 
 **Salary Table**
 - id, name, month, year, total_working_days, ot_hours, base_salary_per_day, total_salary
@@ -51,6 +51,6 @@ Open **http://localhost:5000**
 ## UI Flow
 
 1. **Landing Page** → Choose Attendance or Salary
-2. **Attendance** → See all labours by team → Click to view history
+2. **Attendance** → See all labours → Click to view history
 3. **Mark Attendance** → Select date, mark P/A/H, add OT hours, save
 4. **Salary** → Select month/year → View report → Export CSV

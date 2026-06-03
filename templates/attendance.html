@@ -78,16 +78,6 @@
                                     <option value="">-- Select worker --</option>
                                 </select>
                             </div>
-                            <div class="entry-field entry-role">
-                                <label>Role</label>
-                                <select id="entryRole" class="select-input">
-                                    <option value="">-- Select role --</option>
-                                    <option value="FITTER">FITTER</option>
-                                    <option value="WELDER">WELDER</option>
-                                    <option value="HELPER">HELPER</option>
-                                    <option value="RIGGER">RIGGER</option>
-                                </select>
-                            </div>
                             <div class="entry-field entry-work">
                                 <label>Work</label>
                                 <select id="entryWork" class="select-input">
@@ -246,11 +236,6 @@
                         <option value="HELPER">HELPER</option>
                         <option value="RIGGER">RIGGER</option>
                     </select>
-                </div>
-                <div class="form-group">
-                    <label>Team</label>
-                    <input type="text" id="newTeam" list="teamsList" placeholder="Select or type new team">
-                    <datalist id="teamsList"></datalist>
                 </div>
                 <div class="form-group">
                     <label>Base Salary/Day</label>
@@ -705,66 +690,48 @@ async function loadEditDetails() {
             return;
         }
 
-        // Group by team
-        const teams = {};
-        labours.forEach(l => {
-            const team = l.team || 'Unassigned';
-            if (!teams[team]) teams[team] = [];
-            teams[team].push(l);
-        });
-
-        // Get unique team names for datalist
-        const allTeams = Object.keys(teams);
-
-        let html = '<datalist id="editTeamsList">';
-        allTeams.forEach(t => { html += `<option value="${t}">`; });
-        html += '</datalist>';
-
-        for (const [team, members] of Object.entries(teams)) {
-            html += `
-                <div class="team-section" style="margin-bottom: 24px;">
-                    <h2 class="team-title">${team} <span class="count">(${members.length})</span></h2>
-                    <div class="edit-table-wrap">
-                        <table class="edit-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Name</th>
-                                    <th>Designation</th>
-                                    <th>Team</th>
-                                    <th>Base Pay/Day</th>
-                                    <th>Actions</th>
+        // Single flat list of all workers (teams were removed).
+        const html = `
+            <div class="edit-section" style="margin-bottom: 24px;">
+                <h2 class="edit-title">All Workers <span class="count">(${labours.length})</span></h2>
+                <div class="edit-table-wrap">
+                    <table class="edit-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Designation</th>
+                                <th>Base Pay/Day</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${labours.map(l => `
+                                <tr data-worker-id="${l.worker_id}" id="editRow_${l.worker_id}">
+                                    <td class="id-cell" data-label="ID">${l.worker_id}</td>
+                                    <td data-label="Name"><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" oninput="markEditChanged(this)"></td>
+                                    <td data-label="Designation">
+                                        <select class="edit-input edit-designation" data-original="${l.designation || ''}" onchange="markEditChanged(this)">
+                                            <option value="">--</option>
+                                            <option value="FITTER" ${l.designation === 'FITTER' ? 'selected' : ''}>FITTER</option>
+                                            <option value="WELDER" ${l.designation === 'WELDER' ? 'selected' : ''}>WELDER</option>
+                                            <option value="HELPER" ${l.designation === 'HELPER' ? 'selected' : ''}>HELPER</option>
+                                            <option value="RIGGER" ${l.designation === 'RIGGER' ? 'selected' : ''}>RIGGER</option>
+                                        </select>
+                                    </td>
+                                    <td data-label="Base Pay/Day"><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
+                                    <td class="edit-actions-cell" style="white-space: nowrap;">
+                                        <button class="edit-save-btn" onclick="saveWorkerDetails(${l.worker_id})">Save</button>
+                                        <button class="edit-delete-btn" onclick="deleteWorker(${l.worker_id}, '${escapeHtml(l.name)}')">Delete</button>
+                                        <span class="edit-status" id="editStatus_${l.worker_id}"></span>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                ${members.map(l => `
-                                    <tr data-worker-id="${l.worker_id}" id="editRow_${l.worker_id}">
-                                        <td class="id-cell" data-label="ID">${l.worker_id}</td>
-                                        <td data-label="Name"><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" oninput="markEditChanged(this)"></td>
-                                        <td data-label="Designation">
-                                            <select class="edit-input edit-designation" data-original="${l.designation || ''}" onchange="markEditChanged(this)">
-                                                <option value="">--</option>
-                                                <option value="FITTER" ${l.designation === 'FITTER' ? 'selected' : ''}>FITTER</option>
-                                                <option value="WELDER" ${l.designation === 'WELDER' ? 'selected' : ''}>WELDER</option>
-                                                <option value="HELPER" ${l.designation === 'HELPER' ? 'selected' : ''}>HELPER</option>
-                                                <option value="RIGGER" ${l.designation === 'RIGGER' ? 'selected' : ''}>RIGGER</option>
-                                            </select>
-                                        </td>
-                                        <td data-label="Team"><input type="text" class="edit-input edit-team" list="editTeamsList" value="${escapeHtml(l.team || '')}" data-original="${escapeHtml(l.team || '')}" oninput="markEditChanged(this)"></td>
-                                        <td data-label="Base Pay/Day"><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
-                                        <td class="edit-actions-cell" style="white-space: nowrap;">
-                                            <button class="edit-save-btn" onclick="saveWorkerDetails(${l.worker_id})">Save</button>
-                                            <button class="edit-delete-btn" onclick="deleteWorker(${l.worker_id}, '${escapeHtml(l.name)}')">Delete</button>
-                                            <span class="edit-status" id="editStatus_${l.worker_id}"></span>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
+                            `).join('')}
+                        </tbody>
+                    </table>
                 </div>
-            `;
-        }
+            </div>
+        `;
 
         container.innerHTML = html;
 
@@ -795,7 +762,6 @@ async function saveWorkerDetails(workerId) {
 
     const name = row.querySelector('.edit-name').value.trim();
     const designation = row.querySelector('.edit-designation').value;
-    const team = row.querySelector('.edit-team').value.trim();
     const basePay = parseFloat(row.querySelector('.edit-base-pay').value) || 0;
 
     if (!name) {
@@ -815,7 +781,6 @@ async function saveWorkerDetails(workerId) {
             body: JSON.stringify({
                 name: name,
                 designation: designation,
-                team: team,
                 base_salary_per_day: basePay
             })
         });
@@ -828,7 +793,6 @@ async function saveWorkerDetails(workerId) {
         // Update original values so changed highlighting clears
         row.querySelector('.edit-name').dataset.original = name;
         row.querySelector('.edit-designation').dataset.original = designation;
-        row.querySelector('.edit-team').dataset.original = team;
         row.querySelector('.edit-base-pay').dataset.original = basePay;
 
         row.querySelectorAll('.edit-input').forEach(inp => inp.classList.remove('changed'));
@@ -883,12 +847,11 @@ async function deleteWorker(workerId, workerName) {
         row.style.opacity = '0';
         setTimeout(() => {
             row.remove();
-            // Update team member count
-            document.querySelectorAll('.team-section').forEach(section => {
+            // Update the worker count in the section header
+            document.querySelectorAll('.edit-section').forEach(section => {
                 const rows = section.querySelectorAll('tbody tr');
                 const countSpan = section.querySelector('.count');
                 if (countSpan) countSpan.textContent = `(${rows.length})`;
-                if (rows.length === 0) section.remove();
             });
         }, 300);
 

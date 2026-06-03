@@ -777,7 +777,7 @@ body {
 /* ============================================
    TEAM SECTIONS (Edit Details tab)
    ============================================ */
-.team-section {
+.edit-section {
     background: var(--bg-primary);
     border-radius: var(--radius-xl);
     border: 1px solid var(--border-light);
@@ -785,7 +785,7 @@ body {
     box-shadow: var(--shadow-sm);
 }
 
-.team-title {
+.edit-title {
     font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-secondary);
@@ -800,7 +800,7 @@ body {
     gap: 12px;
 }
 
-.team-title::before {
+.edit-title::before {
     content: '';
     width: 4px;
     height: 20px;
@@ -808,7 +808,7 @@ body {
     border-radius: 2px;
 }
 
-.team-title .count {
+.edit-title .count {
     color: var(--text-tertiary);
     font-weight: 500;
     background: var(--bg-primary);
@@ -2986,7 +2986,7 @@ select.edit-input {
 
 .mark-entry-card {
     display: grid;
-    grid-template-columns: 1.4fr 1fr 1fr 1.4fr auto auto auto;
+    grid-template-columns: 1.4fr 1fr 1.4fr auto auto auto;
     gap: 16px;
     align-items: end;
     padding: 20px;
@@ -3438,9 +3438,8 @@ select.edit-input {
         min-width: 0;
     }
 
-    /* Worker, Role, Work & Project get a full row each; Status + OT share a row */
+    /* Worker, Work & Project get a full row each; Status + OT share a row */
     .entry-worker,
-    .entry-role,
     .entry-work,
     .entry-project,
     .entry-action {

@@ -12,7 +12,6 @@ class Salary(db.Model):
     worker_id = db.Column(db.Integer, nullable=False)
     name = db.Column(db.String(100), nullable=False)
     designation = db.Column(db.String(50))
-    team = db.Column(db.String(50))
     base_salary_per_day = db.Column(db.Numeric(10, 2), default=0)
     year = db.Column(db.Integer, nullable=False)
     month = db.Column(db.Integer, nullable=False)  # 1-12
@@ -30,7 +29,6 @@ class Salary(db.Model):
             'worker_id': self.worker_id,
             'name': self.name,
             'designation': self.designation,
-            'team': self.team,
             'base_salary_per_day': float(self.base_salary_per_day) if self.base_salary_per_day else 0,
             'year': self.year,
             'month': self.month,
@@ -66,11 +64,11 @@ class Attendance(db.Model):
     ot_hours = db.Column(db.Numeric(4, 2), default=0)
     project = db.Column(db.String(300))  # holds canonical "{id} - {stem_name}"
     supervisor_id = db.Column(db.Integer)  # who marked it (nullable for legacy records)
-    # Role performed on this day. Roles are elastic — a worker can do any job —
-    # so the role is chosen per attendance record, not fixed to the worker.
+    # Role for this day — a snapshot of the worker's fixed designation at
+    # marking time (the Mark UI copies it from the worker, it isn't chosen).
     role = db.Column(db.String(50))
-    # The specific work done that day (e.g. welding, grinding). Like role, it's
-    # per-day and chosen at marking time.
+    # The specific work done that day (e.g. welding, grinding). Unlike role,
+    # work is elastic and chosen per attendance record at marking time.
     work = db.Column(db.String(50))
 
     __table_args__ = (

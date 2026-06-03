@@ -95,7 +95,6 @@ def get_day_roster(date_str):
                 'name': w.name if w else f'Worker {r.worker_id}',
                 'role': r.role or '',
                 'work': r.work or '',
-                'team': w.team if w else '',
                 'status': r.status,
                 'ot_hours': float(r.ot_hours) if r.ot_hours else 0,
                 'project': r.project or ''
@@ -122,7 +121,7 @@ def get_labours():
         subquery,
         (Salary.worker_id == subquery.c.worker_id) &
         (Salary.year * 100 + Salary.month == subquery.c.max_period)
-    ).order_by(Salary.team, Salary.name).all()
+    ).order_by(Salary.name).all()
 
     result = []
     for w in workers:
@@ -131,7 +130,6 @@ def get_labours():
             'worker_id': w.worker_id,
             'name': w.name,
             'designation': w.designation,
-            'team': w.team,
             'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
             'last_attendance': last_att.date.isoformat() if last_att else None
         })
@@ -153,7 +151,6 @@ def get_labour_history(worker_id):
         'worker_id': worker.worker_id,
         'name': worker.name,
         'designation': worker.designation,
-        'team': worker.team,
         'base_salary_per_day': float(worker.base_salary_per_day) if worker.base_salary_per_day else 0,
         'attendance': [r.to_dict() for r in records],
         'total_records': len(records)
@@ -178,7 +175,7 @@ def get_attendance_by_date(date_str):
         subquery,
         (Salary.worker_id == subquery.c.worker_id) &
         (Salary.year * 100 + Salary.month == subquery.c.max_period)
-    ).order_by(Salary.team, Salary.name).all()
+    ).order_by(Salary.name).all()
 
     # Get attendance for the date
     attendance_map = {
@@ -192,7 +189,6 @@ def get_attendance_by_date(date_str):
             'worker_id': w.worker_id,
             'name': w.name,
             'designation': w.designation,
-            'team': w.team,
             'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
             'attendance': att.to_dict() if att else {
                 'id': None,
@@ -228,7 +224,6 @@ def mark_attendance():
     if isinstance(data, list):
         results = []
         affected = set()  # (worker_id, year, month)
-        team_updates = {}  # worker_id -> team
         for record in data:
             result = _upsert_attendance(record)
             results.append(result)
@@ -238,12 +233,8 @@ def mark_attendance():
                     affected.add((record['worker_id'], d.year, d.month))
                 except:
                     pass
-            # Track team updates
-            if 'worker_id' in record and 'team' in record and record['team']:
-                team_updates[record['worker_id']] = record['team']
         db.session.commit()
         _recalculate_monthly_salaries(affected)
-        _update_worker_teams(team_updates)
         return jsonify(results), 201
 
     result = _upsert_attendance(data)
@@ -254,9 +245,6 @@ def mark_attendance():
             _recalculate_monthly_salaries({(data['worker_id'], d.year, d.month)})
         except:
             pass
-    # Handle single team update
-    if 'worker_id' in data and 'team' in data and data['team']:
-        _update_worker_teams({data['worker_id']: data['team']})
     return jsonify(result), 201
 
 
@@ -369,7 +357,6 @@ def _recalculate_monthly_salaries(affected_periods):
                 worker_id=worker_id,
                 name=worker_info.name,
                 designation=worker_info.designation,
-                team=worker_info.team,
                 base_salary_per_day=worker_info.base_salary_per_day,
                 year=year,
                 month=month,
@@ -379,14 +366,6 @@ def _recalculate_monthly_salaries(affected_periods):
             )
             db.session.add(salary)
 
-    db.session.commit()
-
-
-def _update_worker_teams(team_updates):
-    """Update team for workers across all their salary records."""
-    for worker_id, team in team_updates.items():
-        # Update all salary records for this worker
-        Salary.query.filter_by(worker_id=worker_id).update({'team': team})
     db.session.commit()
 
 
@@ -412,7 +391,6 @@ def add_labour():
         worker_id=new_id,
         name=name,
         designation=data.get('designation'),
-        team=data.get('team'),
         base_salary_per_day=base_salary,
         year=now.year,
         month=now.month,
@@ -424,13 +402,6 @@ def add_labour():
     db.session.commit()
 
     return jsonify(salary.to_dict()), 201
-
-
-@attendance_bp.route('/api/teams', methods=['GET'])
-def get_teams():
-    """Get list of unique teams."""
-    teams = db.session.query(Salary.team).distinct().filter(Salary.team.isnot(None)).all()
-    return jsonify([t[0] for t in teams if t[0]])
 
 
 @attendance_bp.route('/api/projects', methods=['GET'])
@@ -500,7 +471,7 @@ def get_attendance_summary():
     worker_ids = list(set(r.worker_id for r in records))
     worker_info_map = {}
     if worker_ids:
-        # Get latest salary record per worker for name/team info
+        # Get latest salary record per worker for name/designation info
         subquery = db.session.query(
             Salary.worker_id,
             func.max(Salary.year * 100 + Salary.month).label('max_period')
@@ -515,7 +486,6 @@ def get_attendance_summary():
         for w in workers:
             worker_info_map[w.worker_id] = {
                 'name': w.name,
-                'team': w.team,
                 'designation': w.designation,
                 'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0
             }
@@ -568,7 +538,6 @@ def get_attendance_summary():
             worker_data[r.worker_id] = {
                 'worker_id': r.worker_id,
                 'name': info.get('name', f'Worker {r.worker_id}'),
-                'team': info.get('team', ''),
                 'base_salary_per_day': info.get('base_salary_per_day', 0),
                 'present_days': 0,
                 'absent_days': 0,
@@ -625,7 +594,6 @@ def get_attendance_summary():
         workers_list.append({
             'worker_id': data['worker_id'],
             'name': data['name'],
-            'team': data['team'],
             'present_days': data['present_days'],
             'absent_days': data['absent_days'],
             'ot_hours': round(data['ot_hours'], 2),
@@ -666,8 +634,7 @@ def export_attendance():
     query = db.session.query(
         Attendance,
         Salary.name,
-        Salary.designation,
-        Salary.team
+        Salary.designation
     ).join(
         Salary,
         (Attendance.worker_id == Salary.worker_id)
@@ -680,14 +647,13 @@ def export_attendance():
         Attendance.id
     ).order_by(
         Attendance.date.desc(),
-        Salary.team,
         Salary.name
     ).all()
 
     # Remove duplicates (keep first occurrence per attendance record)
     seen = set()
     result = []
-    for att, name, designation, team in records:
+    for att, name, designation in records:
         if att.id not in seen:
             seen.add(att.id)
             result.append({
@@ -695,7 +661,6 @@ def export_attendance():
                 'worker_id': att.worker_id,
                 'name': name,
                 'designation': designation,
-                'team': team,
                 'status': att.status,
                 'ot_hours': float(att.ot_hours) if att.ot_hours else 0,
                 'project': att.project or '',

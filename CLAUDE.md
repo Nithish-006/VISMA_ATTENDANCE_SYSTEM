@@ -34,7 +34,7 @@ python import_data.py --summary
 - `static/js/` - Vanilla JavaScript for client-side logic
 
 **Database Schema** (MySQL):
-- **Salary**: id (PK), worker_id, name, designation, team, base_salary_per_day, year, month, total_working_days, ot_hours, total_salary
+- **Salary**: id (PK), worker_id, name, designation, base_salary_per_day, year, month, total_working_days, ot_hours, total_salary
   - One row per worker per month
   - Unique constraint on (worker_id, year, month)
   - Auto-created/updated when attendance is marked
@@ -44,7 +44,7 @@ python import_data.py --summary
 **Key Data Flows**:
 1. Attendance updates trigger salary recalculation
 2. Upsert pattern for attendance records (insert-or-update on unique constraint)
-3. Frontend groups workers by team for display
+3. Worker lists are flat (alphabetical by name); there is no team concept
 
 ## API Endpoints
 
@@ -54,7 +54,6 @@ python import_data.py --summary
 - `GET /attendance/date/<date>` - All attendance for a date
 - `POST /attendance` - Mark attendance (single or bulk)
 - `POST /labours` - Add new worker (base_salary optional)
-- `GET /teams` - List unique teams
 - `GET /projects` - List unique projects
 
 **Salary** (`/api/`):

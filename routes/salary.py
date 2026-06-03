@@ -20,7 +20,6 @@ def get_monthly_salaries():
     records = Salary.query.order_by(
         Salary.year.desc(),
         Salary.month.desc(),
-        Salary.team,
         Salary.name
     ).all()
 
@@ -46,7 +45,6 @@ def get_monthly_salaries():
             'worker_id': record.worker_id,
             'name': record.name,
             'designation': record.designation,
-            'team': record.team,
             'base_salary_per_day': base_salary,
             'working_days': working_days,
             'ot_hours': ot_hours,
@@ -97,8 +95,6 @@ def update_salary(record_id):
         salary.name = data['name']
     if 'designation' in data:
         salary.designation = data['designation']
-    if 'team' in data:
-        salary.team = data['team']
 
     db.session.commit()
     return jsonify(salary.to_dict())
@@ -111,10 +107,9 @@ def update_worker_salary(worker_id):
     base_salary = data.get('base_salary_per_day')
     designation = data.get('designation')
     name = data.get('name')
-    team = data.get('team')
 
-    if base_salary is None and designation is None and name is None and team is None:
-        return jsonify({'error': 'At least one field (name, designation, team, base_salary_per_day) is required'}), 400
+    if base_salary is None and designation is None and name is None:
+        return jsonify({'error': 'At least one field (name, designation, base_salary_per_day) is required'}), 400
 
     # Get all salary records for this worker
     records = Salary.query.filter_by(worker_id=worker_id).all()
@@ -128,8 +123,6 @@ def update_worker_salary(worker_id):
             salary.name = name
         if designation is not None:
             salary.designation = designation
-        if team is not None:
-            salary.team = team
 
         if base_salary is not None:
             salary.base_salary_per_day = base_salary

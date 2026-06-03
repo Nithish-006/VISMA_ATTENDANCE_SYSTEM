@@ -1,9 +1,10 @@
 // Mark Attendance Page — supervisor-driven flow
 //
-// Flow: pick a supervisor -> add workers one at a time (worker + role + work +
+// Flow: pick a supervisor -> add workers one at a time (worker + work +
 // project + P/A + OT) -> they collect in a list -> Finish Attendance commits
-// everything. Role and work are elastic, so they're chosen per entry, not
-// derived from the worker.
+// everything. The worker's role is its fixed designation (shown beside the
+// name in the picker and editable only on the worker's edit page); only work
+// is elastic and chosen per entry.
 // Marking targets today by default, with a one-day buffer (Today/Yesterday
 // toggle) so late-reported OT can be recorded; the backend rejects older dates.
 
@@ -29,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         btn.addEventListener('click', () => onMarkDayChange(btn));
     });
 
-    await Promise.all([loadSupervisors(), loadWorkers(), loadProjects(), loadTeamsDatalist()]);
+    await Promise.all([loadSupervisors(), loadWorkers(), loadProjects()]);
 
     document.getElementById('supervisorSelect').addEventListener('change', onSupervisorChange);
     document.getElementById('addSupervisorBtn').addEventListener('click', openSupervisorModal);
@@ -141,17 +142,6 @@ async function loadProjects() {
     updateProjectComboState();
 }
 
-async function loadTeamsDatalist() {
-    try {
-        const res = await fetch('/api/teams');
-        const teams = await res.json();
-        const dl = document.getElementById('teamsList');
-        if (dl) dl.innerHTML = teams.map(t => `<option value="${escapeHtml(t)}">`).join('');
-    } catch (e) {
-        console.error('Failed to load teams:', e);
-    }
-}
-
 function populateSupervisorSelect() {
     const sel = document.getElementById('supervisorSelect');
     const current = selectedSupervisorId;
@@ -214,12 +204,19 @@ function populateWorkerSelect() {
     entries.forEach(e => excluded.add(e.worker_id));
 
     const available = allWorkers.filter(w => !excluded.has(w.worker_id));
-    // Worker is identified by name only. Roles are elastic and chosen per day
-    // via the Role dropdown, so we no longer append the worker's designation.
+    // Show the worker's fixed designation next to the name so two workers who
+    // share a name can be told apart. The designation IS the role — there is no
+    // separate role choice. It's a fixed property of the worker (editable only
+    // on the worker's edit page). data-name carries the plain name and
+    // data-designation the role, both copied into the saved entry on Add.
     sel.innerHTML = '<option value="">-- Select worker --</option>' +
-        available.map(w =>
-            `<option value="${w.worker_id}" data-name="${escapeHtml(w.name)}">${escapeHtml(w.name)}</option>`
-        ).join('');
+        available.map(w => {
+            const label = w.designation
+                ? `${escapeHtml(w.name)} — ${escapeHtml(w.designation)}`
+                : escapeHtml(w.name);
+            return `<option value="${w.worker_id}" data-name="${escapeHtml(w.name)}" `
+                + `data-designation="${escapeHtml(w.designation || '')}">${label}</option>`;
+        }).join('');
 }
 
 // ============================================
@@ -396,7 +393,6 @@ function escapeAttr(str) {
 function addEntry() {
     const wSel = document.getElementById('entryWorker');
     const workerId = wSel.value ? parseInt(wSel.value) : null;
-    const role = document.getElementById('entryRole').value;
     const work = document.getElementById('entryWork').value;
     const project = document.getElementById('entryProject').value;
     const projectSearch = document.getElementById('projectSearch').value.trim();
@@ -404,7 +400,6 @@ function addEntry() {
     ot = Math.min(8, Math.max(0, ot));
 
     if (!workerId) { showMessage('Please choose a worker.', 'error'); return; }
-    if (!role) { showMessage('Please choose a role.', 'error'); return; }
     if (!work) { showMessage('Please choose the work done.', 'error'); return; }
     if (!entryStatus) { showMessage('Please mark Present (P) or Absent (A).', 'error'); return; }
     // Blank is allowed, but a typed-but-not-selected query is not — it would
@@ -419,7 +414,8 @@ function addEntry() {
     entries.push({
         worker_id: workerId,
         name: opt.dataset.name,
-        role: role,
+        // Role is the worker's fixed designation, not a per-day choice.
+        role: opt.dataset.designation || '',
         work: work,
         project: project || '',
         status: entryStatus,
@@ -447,7 +443,6 @@ function editEntry(index) {
     renderEntries();
 
     document.getElementById('entryWorker').value = e.worker_id;
-    document.getElementById('entryRole').value = e.role || '';
     document.getElementById('entryWork').value = e.work || '';
     // Preselect only if the stored value still exists in the registry; a
     // legacy/unmatched value is cleared so the user re-picks a canonical one.
@@ -465,7 +460,6 @@ function editEntry(index) {
 
 function resetEntryForm() {
     document.getElementById('entryWorker').value = '';
-    document.getElementById('entryRole').value = '';
     document.getElementById('entryWork').value = '';
     setProjectValue('');
     document.getElementById('projectSearch').value = '';
@@ -617,7 +611,6 @@ async function addNewLabour(e) {
 
     const name = document.getElementById('newName').value.trim();
     const designation = document.getElementById('newDesignation').value;
-    const team = document.getElementById('newTeam').value.trim();
     const baseSalary = parseFloat(document.getElementById('newSalary').value) || 0;
 
     if (!name) {
@@ -632,7 +625,6 @@ async function addNewLabour(e) {
             body: JSON.stringify({
                 name: name,
                 designation: designation,
-                team: team,
                 base_salary_per_day: baseSalary
             })
         });
@@ -647,7 +639,6 @@ async function addNewLabour(e) {
         document.getElementById('addLabourForm').reset();
 
         await loadWorkers();
-        await loadTeamsDatalist();
         if (selectedSupervisorId) populateWorkerSelect();
 
         showMessage(`Labour "${name}" added successfully!`, 'success');

@@ -57,7 +57,6 @@ def import_from_excel():
                 date_val = row[1]
                 name = str(row[2]).strip()
                 designation = str(row[3]).strip() if row[3] else None
-                team = str(row[4]).strip() if row[4] else None
                 status_raw = str(row[5]).strip() if row[5] else 'Absent'
                 ot_hours = float(row[6]) if row[6] else 0
                 project = str(row[7]).strip() if row[7] else None
@@ -66,8 +65,7 @@ def import_from_excel():
                 if worker_id not in workers:
                     workers[worker_id] = {
                         'name': name,
-                        'designation': designation,
-                        'team': team
+                        'designation': designation
                     }
 
                 # Parse date
@@ -116,13 +114,11 @@ def import_from_excel():
                 worker = workers.get(worker_id, {})
                 name = worker.get('name', f'Worker {worker_id}')
                 designation = worker.get('designation')
-                team = worker.get('team')
 
                 salary = Salary(
                     worker_id=worker_id,
                     name=name,
                     designation=designation,
-                    team=team,
                     total_working_days=total_working_days,
                     ot_hours=ot_hours,
                     base_salary_per_day=base_salary,
