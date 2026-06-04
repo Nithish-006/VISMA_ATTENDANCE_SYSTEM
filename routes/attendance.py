@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from models import db, Attendance, Salary, Supervisor, Worker
-from datetime import datetime, timedelta
+from datetime import datetime
 from sqlalchemy import func, case
 from services.projects_registry import get_projects, ProjectsRegistryError
 
@@ -19,20 +19,16 @@ def _worker_info_map(worker_ids):
     return {w.id: w for w in workers}
 
 
-# Attendance is normally marked on the day itself, but supervisors only learn
-# the previous day's overtime the next morning. A one-day buffer lets them mark
-# (or edit) today and yesterday; anything older stays locked.
-MARKING_BUFFER_DAYS = 1
-
-
+# Attendance can be marked or edited for any past day up to and including today.
+# Future dates are rejected (you can't record attendance for a day that hasn't
+# happened yet).
 def _is_within_marking_window(date_str):
-    """True if date_str (YYYY-MM-DD) is today or within the buffer (yesterday)."""
+    """True if date_str (YYYY-MM-DD) is a valid date no later than today."""
     try:
         d = datetime.strptime(date_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
         return False
-    today = datetime.now().date()
-    return today - timedelta(days=MARKING_BUFFER_DAYS) <= d <= today
+    return d <= datetime.now().date()
 
 
 @attendance_bp.route('/api/supervisors', methods=['GET'])
@@ -180,20 +176,19 @@ def get_attendance_by_date(date_str):
 def mark_attendance():
     """Mark or update attendance (supports bulk).
 
-    Enforces that attendance can only be created or edited for today or
-    yesterday (a one-day buffer for late-reported overtime), so older
-    records can never be modified after the fact.
+    Attendance can be created or edited for any past day up to and including
+    today; only future dates are rejected.
     """
     data = request.get_json()
 
-    # Guard: every record must fall within the marking window (today/yesterday)
-    # and a present worker must be assigned to a project (so labor cost can be
-    # attributed). Absent workers don't require a project.
+    # Guard: every record must fall within the marking window (any date up to
+    # today) and a present worker must be assigned to a project (so labor cost
+    # can be attributed). Absent workers don't require a project.
     records_to_check = data if isinstance(data, list) else [data]
     for rec in records_to_check:
         if not isinstance(rec, dict) or not _is_within_marking_window(rec.get('date')):
             return jsonify({
-                'error': 'Attendance can only be marked or edited for today or yesterday.'
+                'error': 'Attendance cannot be marked for a future date.'
             }), 403
         if rec.get('status') == 'P' and not str(rec.get('project') or '').strip():
             return jsonify({
@@ -229,14 +224,14 @@ def mark_attendance():
 
 @attendance_bp.route('/api/attendance/<int:worker_id>/<date_str>', methods=['DELETE'])
 def delete_attendance(worker_id, date_str):
-    """Remove a worker's attendance for a date (today or yesterday only)."""
+    """Remove a worker's attendance for a date (any date up to today)."""
     try:
         record_date = datetime.strptime(date_str, '%Y-%m-%d').date()
     except ValueError:
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
 
     if not _is_within_marking_window(date_str):
-        return jsonify({'error': 'Attendance can only be edited for today or yesterday.'}), 403
+        return jsonify({'error': 'Attendance cannot be edited for a future date.'}), 403
 
     record = Attendance.query.filter_by(worker_id=worker_id, date=record_date).first()
     if not record:

@@ -5,8 +5,8 @@
 // everything. The worker's role is its fixed designation (shown beside the
 // name in the picker and editable only on the worker's edit page); only work
 // is elastic and chosen per entry.
-// Marking targets today by default, with a one-day buffer (Today/Yesterday
-// toggle) so late-reported OT can be recorded; the backend rejects older dates.
+// Marking targets today by default; a date picker lets the supervisor mark or
+// edit attendance for any past day. The backend rejects only future dates.
 
 let supervisors = [];
 let selectedSupervisorId = null;
@@ -20,15 +20,17 @@ let markedWorkerIds = new Set();      // workers marked on the selected day by A
 let initialPersistedIds = new Set();  // workers this supervisor already had saved for the selected day
 let entries = [];                     // working list: {worker_id, name, role, work, project, status, ot_hours}
 let entryStatus = null;               // 'P' | 'A' currently chosen in the entry form
-let markDateStr = '';                 // the day being marked (today or yesterday)
+let markDateStr = '';                 // the day being marked (any date up to today)
 
 document.addEventListener('DOMContentLoaded', async function () {
     markDateStr = isoForDaysAgo(0);
-    updateMarkDateLabel(0);
-
-    document.querySelectorAll('#markDayToggle .day-btn').forEach(btn => {
-        btn.addEventListener('click', () => onMarkDayChange(btn));
-    });
+    const markPicker = document.getElementById('markDatePicker');
+    if (markPicker) {
+        markPicker.value = markDateStr;
+        markPicker.max = markDateStr;   // no future dates
+        markPicker.addEventListener('change', onMarkDateChange);
+    }
+    updateMarkDateLabel(markDateStr);
 
     await Promise.all([loadSupervisors(), loadWorkers(), loadProjects()]);
 
@@ -67,23 +69,24 @@ function isoForDaysAgo(n) {
     return d.toISOString().split('T')[0];
 }
 
-function updateMarkDateLabel(offset) {
-    const d = new Date();
-    d.setDate(d.getDate() - offset);
+function updateMarkDateLabel(dateStr) {
+    const label = document.getElementById('markDateLabel');
+    if (!label) return;
+    const d = new Date(dateStr + 'T00:00:00');
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const prefix = offset === 0 ? 'Today' : 'Yesterday';
-    const label = document.getElementById('markDateLabel');
-    if (label) label.textContent = `${prefix} — ${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
+    let prefix = '';
+    if (dateStr === isoForDaysAgo(0)) prefix = 'Today — ';
+    else if (dateStr === isoForDaysAgo(1)) prefix = 'Yesterday — ';
+    label.textContent = `${prefix}${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
 }
 
-async function onMarkDayChange(btn) {
-    document.querySelectorAll('#markDayToggle .day-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
+async function onMarkDateChange() {
+    const picker = document.getElementById('markDatePicker');
+    if (!picker || !picker.value) return;
 
-    const offset = parseInt(btn.dataset.offset) || 0;
-    markDateStr = isoForDaysAgo(offset);
-    updateMarkDateLabel(offset);
+    markDateStr = picker.value;
+    updateMarkDateLabel(markDateStr);
 
     // Re-sync the roster/entries for the newly selected day.
     if (selectedSupervisorId) {
