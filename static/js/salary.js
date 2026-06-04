@@ -368,7 +368,6 @@ async function exportExcel() {
                     status: a.status,
                     ot: a.ot_hours || '',
                     project: a.project || '',
-                    role: a.role || '',
                     work: a.work || ''
                 };
             });
@@ -383,8 +382,8 @@ async function exportExcel() {
 
             // Build header rows
             const titleRow = [`LABOUR ATTENDANCE FOR ${sheetName}`];
-            // No worker-level columns beyond name: the role (= worker's fixed
-            // designation) and work are shown per day in the sub-columns below.
+            // The role is the worker's fixed designation, so it lives in the Name
+            // column ("NAME - DESIGNATION") instead of being repeated per day.
             const headerRow1 = ['S. No', 'Name'];
             const headerRow2 = ['', ''];
 
@@ -393,11 +392,11 @@ async function exportExcel() {
                 const isSunday = date.getDay() === 0;
 
                 if (isSunday) {
-                    headerRow1.push(`${day} SUNDAY`, '', '', '', '');
+                    headerRow1.push(`${day} SUNDAY`, '', '', '');
                 } else {
-                    headerRow1.push(day, '', '', '', '');
+                    headerRow1.push(day, '', '', '');
                 }
-                headerRow2.push('', 'OT', 'Pr', 'Role', 'Work');
+                headerRow2.push('', 'OT', 'Pr', 'Work');
             }
 
             headerRow1.push(`${sheetName} MONTH LABOUR ATTENDANCE & PAYMENT`, '', '', '', '', '');
@@ -408,14 +407,16 @@ async function exportExcel() {
             let sNo = 1;
 
             monthWorkers.forEach(w => {
-                const row = [sNo++, w.name];
+                // Fixed role travels with the name in a single "NAME - DESIGNATION" cell.
+                const nameWithRole = w.designation ? `${w.name} - ${w.designation}` : w.name;
+                const row = [sNo++, nameWithRole];
 
                 for (let day = 1; day <= daysInMonth; day++) {
                     const att = attendanceMap[w.worker_id]?.[day];
                     if (att) {
-                        row.push(att.status, att.ot || '', att.project || '', att.role || '', att.work || '');
+                        row.push(att.status, att.ot || '', att.project || '', att.work || '');
                     } else {
-                        row.push('', '', '', '', '');
+                        row.push('', '', '', '');
                     }
                 }
 
@@ -513,11 +514,11 @@ async function exportExcel() {
 
             const cols = [
                 { wch: 5 },
-                { wch: 20 }
+                { wch: 28 }
             ];
 
             for (let day = 1; day <= daysInMonth; day++) {
-                cols.push({ wch: 3 }, { wch: 3 }, { wch: 8 }, { wch: 8 }, { wch: 10 });
+                cols.push({ wch: 3 }, { wch: 3 }, { wch: 8 }, { wch: 10 });
             }
 
             cols.push(
