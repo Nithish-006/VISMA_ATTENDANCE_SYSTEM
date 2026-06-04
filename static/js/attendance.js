@@ -486,16 +486,32 @@ function renderEntries() {
         return;
     }
 
+    // Work and OT are editable straight from the list: supervisors adjusting a
+    // saved day (esp. OT) shouldn't have to round-trip each row through the
+    // entry form at the top. The inline controls write back into `entries`
+    // on change; worker / project / status still go through Edit.
     list.innerHTML = entries.map((e, i) => `
         <div class="marked-row">
             <div class="mr-main">
                 <span class="mr-name">${escapeHtml(e.name)}</span>
-                <span class="mr-role">${escapeHtml(e.role || '—')}${e.work ? ' · ' + escapeHtml(e.work) : ''}</span>
+                <span class="mr-role">${escapeHtml(e.role || '—')}</span>
+            </div>
+            <div class="mr-inline">
+                <label class="mr-inline-field">
+                    <span class="mr-inline-label">Work</span>
+                    <select class="mr-work-input" onchange="updateEntryWork(${i}, this.value)">
+                        ${workOptionsHtml(e.work)}
+                    </select>
+                </label>
+                <label class="mr-inline-field">
+                    <span class="mr-inline-label">OT</span>
+                    <input type="number" class="mr-ot-input" min="0" max="8" step="0.5"
+                           value="${e.ot_hours}" onchange="updateEntryOT(${i}, this)">
+                </label>
             </div>
             <div class="mr-meta">
                 <span class="mr-project" title="Project">${e.project ? escapeHtml(e.project) : 'No project'}</span>
                 <span class="status-pill ${e.status}">${e.status === 'P' ? 'Present' : 'Absent'}</span>
-                <span class="mr-ot">${e.ot_hours > 0 ? '+' + e.ot_hours + ' OT' : 'No OT'}</span>
             </div>
             <div class="mr-actions">
                 <button class="mr-edit" type="button" onclick="editEntry(${i})">Edit</button>
@@ -503,6 +519,38 @@ function renderEntries() {
             </div>
         </div>
     `).join('');
+}
+
+// Build <option>s for the inline Work picker, mirroring the entry-form select
+// (single source of truth) so the choices never drift apart.
+function workOptionsHtml(selected) {
+    const src = document.getElementById('entryWork');
+    let html = '<option value="">-- Work --</option>';
+    if (src) {
+        Array.from(src.options).forEach(o => {
+            if (!o.value) return;  // skip the form's placeholder
+            const sel = o.value === selected ? ' selected' : '';
+            html += `<option value="${escapeAttr(o.value)}"${sel}>${escapeHtml(o.value)}</option>`;
+        });
+    }
+    return html;
+}
+
+// Inline edits write straight back into `entries`; no re-render (which would
+// drop focus / collapse open selects). The committed list is what Finish saves.
+function updateEntryWork(index, value) {
+    if (entries[index]) entries[index].work = value;
+}
+
+// Takes the input element so it can clamp and echo the corrected value back —
+// inline handlers can't reach the script-scoped `entries`, so the write-back
+// has to happen here rather than in the onchange attribute.
+function updateEntryOT(index, el) {
+    if (!entries[index]) return;
+    let ot = parseFloat(el.value) || 0;
+    ot = Math.min(8, Math.max(0, ot));
+    entries[index].ot_hours = ot;
+    el.value = ot;
 }
 
 // ============================================

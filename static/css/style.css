@@ -3214,6 +3214,47 @@ select.edit-input {
     text-align: right;
 }
 
+/* Inline Work / OT editors inside a marked row */
+.mr-inline {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+}
+
+.mr-inline-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.mr-inline-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+}
+
+.mr-work-input,
+.mr-ot-input {
+    font-size: 0.8125rem;
+    padding: 5px 8px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.mr-work-input { min-width: 130px; }
+.mr-ot-input { width: 68px; }
+
+.mr-work-input:focus,
+.mr-ot-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-light);
+}
+
 .mr-actions {
     display: flex;
     align-items: center;
@@ -3299,6 +3340,15 @@ select.edit-input {
         margin-left: 0;
         width: 100%;
     }
+
+    .mr-inline {
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .mr-inline-field { flex: 1; }
+    .mr-work-input { min-width: 0; width: 100%; }
+    .mr-ot-input { width: 100%; }
 }
 
 /* ============================================
