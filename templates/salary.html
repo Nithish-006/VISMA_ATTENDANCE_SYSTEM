@@ -5,58 +5,136 @@
 {% block content %}
 <div class="page-container">
     <header class="page-header">
-        <div class="header-content">
-            <a href="{{ url_for('index') }}" class="back-btn">
-                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path d="M19 12H5M12 19l-7-7 7-7"/>
-                </svg>
-                Back
-            </a>
-            <div class="header-controls" style="margin-left: auto;">
-                <button id="exportBtn" class="btn" style="background-color: #22c55e; color: black; font-family: 'Inter', sans-serif; font-weight: 700;">
+        <div class="header-content header-three-col">
+            <!-- Left: Back button -->
+            <div class="header-left">
+                <a href="{{ url_for('index') }}" class="back-btn">
                     <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="7 10 12 15 17 10"/>
-                        <line x1="12" y1="15" x2="12" y2="3"/>
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
                     </svg>
-                    Export Excel
-                </button>
+                    Back
+                </a>
+            </div>
+
+            <!-- Center: Tab Switcher -->
+            <div class="header-center">
+                <div class="tab-switcher">
+                    <button id="tabSummary" class="tab-btn active" onclick="showSalaryPanel('summary')"><span class="tab-label-full">Salary Summary</span><span class="tab-label-short">Summary</span></button>
+                    <button id="tabWorkers" class="tab-btn" onclick="showSalaryPanel('workers')"><span class="tab-label-full">Worker Pay</span><span class="tab-label-short">Pay</span></button>
+                </div>
+            </div>
+
+            <!-- Right: Per-tab controls -->
+            <div class="header-right">
+                <div id="summaryControls" class="control-group">
+                    <button id="exportBtn" class="btn" style="background-color: #22c55e; color: black; font-family: 'Inter', sans-serif; font-weight: 700;">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Export Excel
+                    </button>
+                </div>
+                <div id="workersControls" class="control-group" style="display: none;">
+                    <button id="addWorkerBtn" class="btn btn-secondary btn-add-worker" title="Add New Worker">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="8.5" cy="7" r="4"/>
+                            <line x1="20" y1="8" x2="20" y2="14"/>
+                            <line x1="23" y1="11" x2="17" y2="11"/>
+                        </svg>
+                        <span>Add Worker</span>
+                    </button>
+                </div>
             </div>
         </div>
     </header>
 
-    <main class="main-content">
-        <div class="salary-summary-section">
-            <div class="summary-filters">
-                <div class="filter-group">
-                    <label>From</label>
-                    <input type="date" id="salaryStartDate" class="date-input">
-                </div>
-                <div class="filter-group">
-                    <label>To</label>
-                    <input type="date" id="salaryEndDate" class="date-input">
-                </div>
-                <div class="filter-group">
-                    <label>Project</label>
-                    <select id="salaryProject" class="select-input">
-                        <option value="">All Projects</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Labour</label>
-                    <select id="salaryWorker" class="select-input">
-                        <option value="">All Labours</option>
-                    </select>
-                </div>
-                <div class="filter-action">
-                    <button class="btn btn-secondary" onclick="resetSalaryFilters()">Reset</button>
-                </div>
+    <div id="message" class="message" style="display: none;"></div>
+
+    <!-- Sliding Panels Container -->
+    <div class="panels-wrapper">
+        <div id="salaryPanelsContainer" class="panels-container">
+            <!-- Panel 1: Salary Summary -->
+            <div id="panelSummary" class="panel active">
+                <main class="main-content">
+                    <div class="salary-summary-section">
+                        <div class="summary-filters">
+                            <div class="filter-group">
+                                <label>From</label>
+                                <input type="date" id="salaryStartDate" class="date-input">
+                            </div>
+                            <div class="filter-group">
+                                <label>To</label>
+                                <input type="date" id="salaryEndDate" class="date-input">
+                            </div>
+                            <div class="filter-group">
+                                <label>Project</label>
+                                <select id="salaryProject" class="select-input">
+                                    <option value="">All Projects</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Labour</label>
+                                <select id="salaryWorker" class="select-input">
+                                    <option value="">All Labours</option>
+                                </select>
+                            </div>
+                            <div class="filter-action">
+                                <button class="btn btn-secondary" onclick="resetSalaryFilters()">Reset</button>
+                            </div>
+                        </div>
+                        <div id="monthPillsBar" class="month-filter-bar"></div>
+                        <div id="salarySummaryDashboard" class="summary-dashboard">
+                        </div>
+                    </div>
+                </main>
             </div>
-            <div id="monthPillsBar" class="month-filter-bar"></div>
-            <div id="salarySummaryDashboard" class="summary-dashboard">
+
+            <!-- Panel 2: Worker Pay (base salary & details) -->
+            <div id="panelWorkers" class="panel">
+                <main class="main-content">
+                    <div id="workerEditorContainer">
+                        <div class="empty-state">Loading worker details...</div>
+                    </div>
+                </main>
             </div>
         </div>
-    </main>
+    </div>
+</div>
+
+<!-- Add Worker Modal -->
+<div id="addModal" class="modal" style="display: none;">
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <h2>Add New Worker</h2>
+            <button class="close-btn" onclick="closeAddModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="addWorkerForm">
+                <div class="form-group">
+                    <label>Name *</label>
+                    <input type="text" id="newName" required placeholder="Enter worker name">
+                </div>
+                <div class="form-group">
+                    <label>Designation</label>
+                    <select id="newDesignation">
+                        <option value="">Select designation...</option>
+                        <option value="FITTER">FITTER</option>
+                        <option value="WELDER">WELDER</option>
+                        <option value="HELPER">HELPER</option>
+                        <option value="RIGGER">RIGGER</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Base Salary/Day</label>
+                    <input type="number" id="newSalary" min="0" step="50" placeholder="Optional - set later">
+                </div>
+                <button type="submit" class="submit-btn">Add Worker</button>
+            </form>
+        </div>
+    </div>
 </div>
 
 <!-- Attendance History Modal -->

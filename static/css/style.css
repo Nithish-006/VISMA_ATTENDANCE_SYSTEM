@@ -716,13 +716,13 @@ body {
 
 .panels-container {
     display: flex;
-    width: 300%;
+    width: 200%;
     transform: translateX(0);
     transition: transform 0.3s ease;
 }
 
 .panel {
-    width: 33.333%;
+    width: 50%;
     min-height: calc(100vh - 72px);
 }
 

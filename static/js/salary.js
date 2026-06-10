@@ -5,6 +5,16 @@ let salaryData = null;
 document.addEventListener('DOMContentLoaded', function() {
     loadSalaryData();
     document.getElementById('exportBtn').addEventListener('click', exportExcel);
+
+    // Worker Pay tab: add-worker modal wiring
+    document.getElementById('addWorkerBtn').addEventListener('click', function() {
+        document.getElementById('addModal').style.display = 'flex';
+        setTimeout(() => document.getElementById('newName').focus(), 50);
+    });
+    document.getElementById('addWorkerForm').addEventListener('submit', addNewWorker);
+    document.getElementById('addModal').addEventListener('click', function(e) {
+        if (e.target === this) closeAddModal();
+    });
 });
 
 async function loadSalaryData() {
@@ -20,6 +30,20 @@ async function loadSalaryData() {
     // Render month pills and init filters
     renderMonthPills();
     initSalarySummary();
+}
+
+// Re-fetch monthly data (export source) and re-render the dashboard after a
+// worker edit/delete, WITHOUT re-running initSalarySummary — that would re-bind
+// the filter change-listeners and stack duplicate handlers.
+async function refreshSalaryData() {
+    try {
+        const response = await fetch('/api/salary/monthly');
+        if (response.ok) salaryData = await response.json();
+    } catch (error) {
+        console.error('Error refreshing salary data:', error);
+    }
+    renderMonthPills();
+    loadSalarySummary();
 }
 
 // ============================================
@@ -675,3 +699,298 @@ document.addEventListener('click', function(e) {
         closeHistoryModal();
     }
 });
+
+// ============================================
+// PANEL SWITCHING  (Salary Summary  /  Worker Pay)
+// ============================================
+
+let currentSalaryPanel = 'summary';
+let workersLoaded = false;
+
+function showSalaryPanel(panel) {
+    if (panel === currentSalaryPanel) return;
+    currentSalaryPanel = panel;
+
+    const container = document.getElementById('salaryPanelsContainer');
+    const tabSummary = document.getElementById('tabSummary');
+    const tabWorkers = document.getElementById('tabWorkers');
+    const summaryControls = document.getElementById('summaryControls');
+    const workersControls = document.getElementById('workersControls');
+
+    tabSummary.classList.remove('active');
+    tabWorkers.classList.remove('active');
+
+    if (panel === 'summary') {
+        container.style.transform = 'translateX(0)';
+        tabSummary.classList.add('active');
+        summaryControls.style.display = 'flex';
+        workersControls.style.display = 'none';
+    } else if (panel === 'workers') {
+        container.style.transform = 'translateX(-50%)';
+        tabWorkers.classList.add('active');
+        summaryControls.style.display = 'none';
+        workersControls.style.display = 'flex';
+
+        if (!workersLoaded) {
+            loadWorkerEditor();
+            workersLoaded = true;
+        }
+    }
+}
+
+// ============================================
+// WORKER PAY  (base salary, designation, name, delete)
+// ============================================
+
+async function loadWorkerEditor() {
+    const container = document.getElementById('workerEditorContainer');
+    container.innerHTML = '<div class="loading">Loading worker details...</div>';
+
+    try {
+        const response = await fetch('/api/labours');
+        const labours = await response.json();
+
+        if (labours.length === 0) {
+            container.innerHTML = '<div class="empty-state">No workers found.</div>';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="edit-section" style="margin-bottom: 24px;">
+                <h2 class="edit-title">All Workers <span class="count">(${labours.length})</span></h2>
+                <div class="edit-table-wrap">
+                    <table class="edit-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Designation</th>
+                                <th>Base Pay/Day</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${labours.map(l => `
+                                <tr data-worker-id="${l.worker_id}" id="editRow_${l.worker_id}">
+                                    <td class="id-cell" data-label="ID">${l.worker_id}</td>
+                                    <td data-label="Name"><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" oninput="markEditChanged(this)"></td>
+                                    <td data-label="Designation">
+                                        <select class="edit-input edit-designation" data-original="${l.designation || ''}" onchange="markEditChanged(this)">
+                                            <option value="">--</option>
+                                            <option value="FITTER" ${l.designation === 'FITTER' ? 'selected' : ''}>FITTER</option>
+                                            <option value="WELDER" ${l.designation === 'WELDER' ? 'selected' : ''}>WELDER</option>
+                                            <option value="HELPER" ${l.designation === 'HELPER' ? 'selected' : ''}>HELPER</option>
+                                            <option value="RIGGER" ${l.designation === 'RIGGER' ? 'selected' : ''}>RIGGER</option>
+                                        </select>
+                                    </td>
+                                    <td data-label="Base Pay/Day"><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
+                                    <td class="edit-actions-cell" style="white-space: nowrap;">
+                                        <button class="edit-save-btn" onclick="saveWorkerDetails(${l.worker_id})">Save</button>
+                                        <button class="edit-delete-btn" onclick="deleteWorker(${l.worker_id}, '${escapeHtml(l.name)}')">Delete</button>
+                                        <span class="edit-status" id="editStatus_${l.worker_id}"></span>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        container.innerHTML = '<div class="error">Error loading worker details.</div>';
+        console.error(error);
+    }
+}
+
+function markEditChanged(input) {
+    if (input.value !== input.dataset.original) {
+        input.classList.add('changed');
+    } else {
+        input.classList.remove('changed');
+    }
+}
+
+async function saveWorkerDetails(workerId) {
+    const row = document.getElementById(`editRow_${workerId}`);
+    const btn = row.querySelector('.edit-save-btn');
+    const status = document.getElementById(`editStatus_${workerId}`);
+
+    const name = row.querySelector('.edit-name').value.trim();
+    const designation = row.querySelector('.edit-designation').value;
+    const basePay = parseFloat(row.querySelector('.edit-base-pay').value) || 0;
+
+    if (!name) {
+        status.textContent = 'Name required';
+        status.className = 'edit-status error';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    status.textContent = '';
+
+    try {
+        const response = await fetch(`/api/salary/worker/${workerId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: name,
+                designation: designation,
+                base_salary_per_day: basePay
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to save');
+        }
+
+        // Update original values so changed highlighting clears
+        row.querySelector('.edit-name').dataset.original = name;
+        row.querySelector('.edit-designation').dataset.original = designation;
+        row.querySelector('.edit-base-pay').dataset.original = basePay;
+        row.querySelectorAll('.edit-input').forEach(inp => inp.classList.remove('changed'));
+
+        btn.textContent = 'Saved';
+        btn.classList.add('saved');
+        status.textContent = '';
+        status.className = 'edit-status success';
+
+        // A base-pay change recalculates monthly totals — refresh the summary.
+        await refreshSalaryData();
+
+        setTimeout(() => {
+            btn.textContent = 'Save';
+            btn.classList.remove('saved');
+        }, 2000);
+
+    } catch (error) {
+        status.textContent = 'Error';
+        status.className = 'edit-status error';
+        console.error(error);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function deleteWorker(workerId, workerName) {
+    if (!confirm(`Are you sure you want to delete worker "${workerName}" (ID: ${workerId})?\n\nThis will permanently delete all attendance and salary records for this worker.`)) {
+        return;
+    }
+
+    const row = document.getElementById(`editRow_${workerId}`);
+    const status = document.getElementById(`editStatus_${workerId}`);
+    const deleteBtn = row.querySelector('.edit-delete-btn');
+
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting...';
+    status.textContent = '';
+
+    try {
+        const response = await fetch(`/api/salary/worker/${workerId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to delete');
+        }
+
+        row.style.transition = 'opacity 0.3s';
+        row.style.opacity = '0';
+        setTimeout(() => {
+            row.remove();
+            // Update the worker count in the section header
+            document.querySelectorAll('.edit-section').forEach(section => {
+                const rows = section.querySelectorAll('tbody tr');
+                const countSpan = section.querySelector('.count');
+                if (countSpan) countSpan.textContent = `(${rows.length})`;
+            });
+        }, 300);
+
+        // Removing a worker drops their salary rows — refresh the summary.
+        await refreshSalaryData();
+
+    } catch (error) {
+        status.textContent = 'Delete failed';
+        status.className = 'edit-status error';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.disabled = false;
+        console.error(error);
+    }
+}
+
+// ============================================
+// ADD WORKER
+// ============================================
+
+async function addNewWorker(e) {
+    e.preventDefault();
+
+    const name = document.getElementById('newName').value.trim();
+    const designation = document.getElementById('newDesignation').value;
+    const baseSalary = parseFloat(document.getElementById('newSalary').value) || 0;
+
+    if (!name) {
+        alert('Name is required');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/labours', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: name,
+                designation: designation,
+                base_salary_per_day: baseSalary
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            alert(err.error || 'Failed to add worker');
+            return;
+        }
+
+        closeAddModal();
+        document.getElementById('addWorkerForm').reset();
+
+        // Refresh the editor list (if loaded) and the summary filters/data.
+        workersLoaded = false;
+        if (currentSalaryPanel === 'workers') {
+            loadWorkerEditor();
+            workersLoaded = true;
+        }
+        loadSalaryFilters();
+
+        showMessage(`Worker "${name}" added successfully!`, 'success');
+    } catch (error) {
+        alert('Error adding worker');
+        console.error(error);
+    }
+}
+
+function closeAddModal() {
+    document.getElementById('addModal').style.display = 'none';
+}
+
+// ============================================
+// HELPERS
+// ============================================
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function showMessage(text, type) {
+    const msg = document.getElementById('message');
+    if (!msg) return;
+    msg.textContent = text;
+    msg.className = `message ${type}`;
+    msg.style.display = 'block';
+    setTimeout(() => { msg.style.display = 'none'; }, 4000);
+}

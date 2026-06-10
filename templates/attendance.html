@@ -21,7 +21,6 @@
                 <div class="tab-switcher">
                     <button id="tabMark" class="tab-btn active" onclick="showPanel('mark')"><span class="tab-label-full">Mark Attendance</span><span class="tab-label-short">Mark</span></button>
                     <button id="tabSummary" class="tab-btn" onclick="showPanel('summary')"><span class="tab-label-full">Summary</span><span class="tab-label-short">Summary</span></button>
-                    <button id="tabEdit" class="tab-btn" onclick="showPanel('edit')"><span class="tab-label-full">Edit Details</span><span class="tab-label-short">Edit</span></button>
                 </div>
             </div>
 
@@ -183,14 +182,6 @@
                 </main>
             </div>
 
-            <!-- Panel 3: Edit Details -->
-            <div id="panelEdit" class="panel">
-                <main class="main-content">
-                    <div id="editDetailsContainer">
-                        <div class="empty-state">Loading worker details...</div>
-                    </div>
-                </main>
-            </div>
         </div>
     </div>
 </div>
@@ -267,7 +258,6 @@
 // Panel switching
 let currentPanel = 'mark';
 window.summaryLoaded = false;
-window.editLoaded = false;
 
 function showPanel(panel) {
     if (panel === currentPanel) return;
@@ -276,20 +266,18 @@ function showPanel(panel) {
     const container = document.getElementById('panelsContainer');
     const tabMark = document.getElementById('tabMark');
     const tabSummary = document.getElementById('tabSummary');
-    const tabEdit = document.getElementById('tabEdit');
     const markControls = document.getElementById('markControls');
 
     // Remove active from all tabs
     tabMark.classList.remove('active');
     tabSummary.classList.remove('active');
-    tabEdit.classList.remove('active');
 
     if (panel === 'mark') {
         container.style.transform = 'translateX(0)';
         tabMark.classList.add('active');
         markControls.style.display = 'flex';
     } else if (panel === 'summary') {
-        container.style.transform = 'translateX(-33.333%)';
+        container.style.transform = 'translateX(-50%)';
         tabSummary.classList.add('active');
         markControls.style.display = 'none';
 
@@ -298,15 +286,6 @@ function showPanel(panel) {
             setSummaryMode('day');
             setDay('today');
             window.summaryLoaded = true;
-        }
-    } else if (panel === 'edit') {
-        container.style.transform = 'translateX(-66.666%)';
-        tabEdit.classList.add('active');
-        markControls.style.display = 'none';
-
-        if (!window.editLoaded) {
-            loadEditDetails();
-            window.editLoaded = true;
         }
     }
 }
@@ -673,197 +652,10 @@ function formatDate(dateStr) {
     return `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 }
 
-// ============================================
-// EDIT DETAILS
-// ============================================
-
-async function loadEditDetails() {
-    const container = document.getElementById('editDetailsContainer');
-    container.innerHTML = '<div class="loading">Loading worker details...</div>';
-
-    try {
-        const response = await fetch('/api/labours');
-        const labours = await response.json();
-
-        if (labours.length === 0) {
-            container.innerHTML = '<div class="empty-state">No labours found.</div>';
-            return;
-        }
-
-        // Single flat list of all workers (teams were removed).
-        const html = `
-            <div class="edit-section" style="margin-bottom: 24px;">
-                <h2 class="edit-title">All Workers <span class="count">(${labours.length})</span></h2>
-                <div class="edit-table-wrap">
-                    <table class="edit-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Name</th>
-                                <th>Designation</th>
-                                <th>Base Pay/Day</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${labours.map(l => `
-                                <tr data-worker-id="${l.worker_id}" id="editRow_${l.worker_id}">
-                                    <td class="id-cell" data-label="ID">${l.worker_id}</td>
-                                    <td data-label="Name"><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" oninput="markEditChanged(this)"></td>
-                                    <td data-label="Designation">
-                                        <select class="edit-input edit-designation" data-original="${l.designation || ''}" onchange="markEditChanged(this)">
-                                            <option value="">--</option>
-                                            <option value="FITTER" ${l.designation === 'FITTER' ? 'selected' : ''}>FITTER</option>
-                                            <option value="WELDER" ${l.designation === 'WELDER' ? 'selected' : ''}>WELDER</option>
-                                            <option value="HELPER" ${l.designation === 'HELPER' ? 'selected' : ''}>HELPER</option>
-                                            <option value="RIGGER" ${l.designation === 'RIGGER' ? 'selected' : ''}>RIGGER</option>
-                                        </select>
-                                    </td>
-                                    <td data-label="Base Pay/Day"><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
-                                    <td class="edit-actions-cell" style="white-space: nowrap;">
-                                        <button class="edit-save-btn" onclick="saveWorkerDetails(${l.worker_id})">Save</button>
-                                        <button class="edit-delete-btn" onclick="deleteWorker(${l.worker_id}, '${escapeHtml(l.name)}')">Delete</button>
-                                        <span class="edit-status" id="editStatus_${l.worker_id}"></span>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-
-        container.innerHTML = html;
-
-    } catch (error) {
-        container.innerHTML = '<div class="error">Error loading worker details.</div>';
-        console.error(error);
-    }
-}
-
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
-}
-
-function markEditChanged(input) {
-    if (input.value !== input.dataset.original) {
-        input.classList.add('changed');
-    } else {
-        input.classList.remove('changed');
-    }
-}
-
-async function saveWorkerDetails(workerId) {
-    const row = document.getElementById(`editRow_${workerId}`);
-    const btn = row.querySelector('.edit-save-btn');
-    const status = document.getElementById(`editStatus_${workerId}`);
-
-    const name = row.querySelector('.edit-name').value.trim();
-    const designation = row.querySelector('.edit-designation').value;
-    const basePay = parseFloat(row.querySelector('.edit-base-pay').value) || 0;
-
-    if (!name) {
-        status.textContent = 'Name required';
-        status.className = 'edit-status error';
-        return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = 'Saving...';
-    status.textContent = '';
-
-    try {
-        const response = await fetch(`/api/salary/worker/${workerId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name: name,
-                designation: designation,
-                base_salary_per_day: basePay
-            })
-        });
-
-        if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to save');
-        }
-
-        // Update original values so changed highlighting clears
-        row.querySelector('.edit-name').dataset.original = name;
-        row.querySelector('.edit-designation').dataset.original = designation;
-        row.querySelector('.edit-base-pay').dataset.original = basePay;
-
-        row.querySelectorAll('.edit-input').forEach(inp => inp.classList.remove('changed'));
-
-        btn.textContent = 'Saved';
-        btn.classList.add('saved');
-        status.textContent = '';
-        status.className = 'edit-status success';
-
-        // Invalidate summary cache
-        window.summaryLoaded = false;
-
-        setTimeout(() => {
-            btn.textContent = 'Save';
-            btn.classList.remove('saved');
-        }, 2000);
-
-    } catch (error) {
-        status.textContent = 'Error';
-        status.className = 'edit-status error';
-        console.error(error);
-    } finally {
-        btn.disabled = false;
-    }
-}
-
-async function deleteWorker(workerId, workerName) {
-    if (!confirm(`Are you sure you want to delete worker "${workerName}" (ID: ${workerId})?\n\nThis will permanently delete all attendance and salary records for this worker.`)) {
-        return;
-    }
-
-    const row = document.getElementById(`editRow_${workerId}`);
-    const status = document.getElementById(`editStatus_${workerId}`);
-    const deleteBtn = row.querySelector('.edit-delete-btn');
-
-    deleteBtn.disabled = true;
-    deleteBtn.textContent = 'Deleting...';
-    status.textContent = '';
-
-    try {
-        const response = await fetch(`/api/salary/worker/${workerId}`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' }
-        });
-
-        if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to delete');
-        }
-
-        row.style.transition = 'opacity 0.3s';
-        row.style.opacity = '0';
-        setTimeout(() => {
-            row.remove();
-            // Update the worker count in the section header
-            document.querySelectorAll('.edit-section').forEach(section => {
-                const rows = section.querySelectorAll('tbody tr');
-                const countSpan = section.querySelector('.count');
-                if (countSpan) countSpan.textContent = `(${rows.length})`;
-            });
-        }, 300);
-
-        window.summaryLoaded = false;
-
-    } catch (error) {
-        status.textContent = 'Delete failed';
-        status.className = 'edit-status error';
-        deleteBtn.textContent = 'Delete';
-        deleteBtn.disabled = false;
-        console.error(error);
-    }
 }
 </script>
 {% endblock %}
