@@ -15,3 +15,6 @@ Thumbs.db
 
 # Database backups (data dumps, not source)
 backups/
+
+# Generated reports (contain live data)
+reports/

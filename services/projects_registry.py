@@ -25,9 +25,13 @@ _engine_lock = threading.Lock()
 _cache_lock = threading.Lock()
 _cache = {"data": None, "ts": 0.0}
 
-# Only real projects are selectable — rows with is_project = 0 are internal
-# (e.g. factory expense) and must not appear in the attendance dropdown.
-_QUERY = text("SELECT id, stem_name FROM projects WHERE is_project = 1 ORDER BY id")
+# Only real projects are selectable. The registry tags every row with a
+# project_type of 'project', 'design', or 'other'; designs and others are
+# internal (e.g. factory expense) and must not appear in the attendance
+# dropdown. Filter on project_type so only true projects are listed.
+_QUERY = text(
+    "SELECT id, stem_name FROM projects WHERE project_type = 'project' ORDER BY id"
+)
 
 
 class ProjectsRegistryError(Exception):
