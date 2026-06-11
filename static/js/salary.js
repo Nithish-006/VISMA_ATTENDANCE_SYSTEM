@@ -2,6 +2,36 @@
 
 let salaryData = null;
 
+// All dates in this app are reckoned in IST, independent of the viewer's
+// timezone. These helpers keep "today", date parsing, and formatting from
+// drifting with the browser locale: toISOString() shifts to UTC, and parsing a
+// bare "YYYY-MM-DD" treats it as UTC midnight — both roll the day backwards for
+// viewers behind UTC.
+
+// Parse a date string ("YYYY-MM-DD" or ISO datetime) as a literal calendar date
+// in local time, so year/month/day/weekday read back exactly as written.
+function parseDate(dateStr) {
+    const [y, m, d] = dateStr.split('T')[0].split('-').map(Number);
+    return new Date(y, m - 1, d);
+}
+
+// Today's IST calendar date, as a Date at local midnight.
+function istToday() {
+    const ymd = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    return parseDate(ymd);
+}
+
+// Format a Date's local fields as YYYY-MM-DD (no toISOString/UTC shift).
+function isoDate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     loadSalaryData();
     document.getElementById('exportBtn').addEventListener('click', exportExcel);
@@ -95,15 +125,15 @@ function renderMonthPills() {
 
 function initSalarySummary() {
     // Default to current week (Mon-Sun), matching attendance summary
-    const today = new Date();
+    const today = istToday();
     const day = today.getDay();
     const monday = new Date(today);
     monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
 
-    document.getElementById('salaryStartDate').value = monday.toISOString().split('T')[0];
-    document.getElementById('salaryEndDate').value = sunday.toISOString().split('T')[0];
+    document.getElementById('salaryStartDate').value = isoDate(monday);
+    document.getElementById('salaryEndDate').value = isoDate(sunday);
 
     loadSalaryFilters();
     loadSalarySummary();
@@ -141,15 +171,15 @@ async function loadSalaryFilters() {
 
 function resetSalaryFilters() {
     // Reset dates to current week
-    const today = new Date();
+    const today = istToday();
     const day = today.getDay();
     const monday = new Date(today);
     monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
 
-    document.getElementById('salaryStartDate').value = monday.toISOString().split('T')[0];
-    document.getElementById('salaryEndDate').value = sunday.toISOString().split('T')[0];
+    document.getElementById('salaryStartDate').value = isoDate(monday);
+    document.getElementById('salaryEndDate').value = isoDate(sunday);
     document.getElementById('salaryProject').value = '';
     document.getElementById('salaryWorker').value = '';
 
@@ -304,7 +334,7 @@ async function loadSalarySummary() {
                 const wId = parseInt(this.dataset.workerId);
                 const wName = this.dataset.workerName;
                 // Determine month from the date range
-                const sd = new Date(startDate);
+                const sd = parseDate(startDate);
                 showAttendanceHistory(wId, sd.getFullYear(), sd.getMonth() + 1, wName);
             });
         });
@@ -316,7 +346,7 @@ async function loadSalarySummary() {
 }
 
 function formatDate(dateStr) {
-    const d = new Date(dateStr);
+    const d = parseDate(dateStr);
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 }
@@ -377,14 +407,14 @@ async function exportExcel() {
 
             // Filter attendance for this month
             const monthAttendance = attendanceData.filter(a => {
-                const d = new Date(a.date);
+                const d = parseDate(a.date);
                 return d.getFullYear() === year && (d.getMonth() + 1) === monthNum;
             });
 
             // Build attendance map: worker_id -> day -> {status, ot, project}
             const attendanceMap = {};
             monthAttendance.forEach(a => {
-                const day = new Date(a.date).getDate();
+                const day = parseDate(a.date).getDate();
                 if (!attendanceMap[a.worker_id]) {
                     attendanceMap[a.worker_id] = {};
                 }
@@ -487,7 +517,7 @@ async function exportExcel() {
             // Daily headcount
             const dailyStats = {};
             monthAttendance.forEach(a => {
-                const day = new Date(a.date).getDate();
+                const day = parseDate(a.date).getDate();
                 if (!dailyStats[day]) {
                     dailyStats[day] = { present: 0, absent: 0, holiday: 0, otHours: 0 };
                 }
@@ -563,7 +593,7 @@ async function exportExcel() {
         }
 
         const projectSuffix = selectedProject ? `_${selectedProject.replace(/\s+/g, '_')}` : '';
-        const fileName = `salary_report${projectSuffix}_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const fileName = `salary_report${projectSuffix}_${isoDate(istToday())}.xlsx`;
         XLSX.writeFile(wb, fileName);
 
     } catch (error) {
@@ -602,7 +632,7 @@ async function showAttendanceHistory(workerId, year, month, workerName) {
         // Group attendance by month
         const monthlyData = {};
         data.attendance.forEach(a => {
-            const date = new Date(a.date);
+            const date = parseDate(a.date);
             const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[monthKey]) {
                 monthlyData[monthKey] = {
@@ -622,7 +652,7 @@ async function showAttendanceHistory(workerId, year, month, workerName) {
 
         const sortedMonths = Object.keys(monthlyData).sort().reverse();
         sortedMonths.forEach(monthKey => {
-            monthlyData[monthKey].records.sort((a, b) => new Date(a.date) - new Date(b.date));
+            monthlyData[monthKey].records.sort((a, b) => parseDate(a.date) - parseDate(b.date));
         });
 
         if (sortedMonths.length === 0) {
@@ -660,7 +690,7 @@ async function showAttendanceHistory(workerId, year, month, workerName) {
                             </div>
                             <div class="calendar-grid">
                                 ${m.records.map(a => {
-                                    const day = new Date(a.date).getDate();
+                                    const day = parseDate(a.date).getDate();
                                     return `
                                         <div class="day-cell ${a.status.toLowerCase()}" title="${a.date}${a.project ? ' - ' + a.project : ''}">
                                             <span class="day-num">${day}</span>

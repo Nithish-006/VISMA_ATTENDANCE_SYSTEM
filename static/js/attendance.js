@@ -59,16 +59,32 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
 });
 
-// Date string (YYYY-MM-DD) for `n` days ago, matching how the rest of the app
-// derives "today" so today/yesterday stay consistent with each other.
+// Today's IST calendar date as a Date anchored at local midnight, regardless of
+// the browser's actual timezone. Attendance is always reckoned in IST (the
+// backend agrees), so day math here must not drift with the viewer's locale.
+// Only the date matters for marking, so we don't carry a time component.
+function istNow() {
+    // en-CA formats as YYYY-MM-DD for the requested zone.
+    const ymd = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    return new Date(`${ymd}T00:00:00`);
+}
+
+// Date string (YYYY-MM-DD) for `n` days ago in IST, matching how the rest of the
+// app derives "today" so today/yesterday stay consistent with each other.
 function isoForDaysAgo(n) {
-    const d = new Date();
+    const d = istNow();
     d.setDate(d.getDate() - n);
-    return d.toISOString().split('T')[0];
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
 }
 
 function updateMarkDateLabel(offset) {
-    const d = new Date();
+    const d = istNow();
     d.setDate(d.getDate() - offset);
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

@@ -1,10 +1,21 @@
 from flask import Blueprint, request, jsonify
 from models import db, Attendance, Salary, Supervisor, Worker
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from sqlalchemy import func, case
 from services.projects_registry import get_projects, ProjectsRegistryError
 
 attendance_bp = Blueprint('attendance', __name__)
+
+# Attendance is always reckoned in IST regardless of where the app is hosted
+# (Railway containers run in UTC, which is ~5.5h behind and would roll the date
+# over early). "Today" must mean today in India.
+IST = ZoneInfo('Asia/Kolkata')
+
+
+def ist_now():
+    """Current datetime in IST."""
+    return datetime.now(IST)
 
 
 def _worker_info_map(worker_ids):
@@ -31,7 +42,7 @@ def _is_within_marking_window(date_str):
         d = datetime.strptime(date_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
         return False
-    today = datetime.now().date()
+    today = ist_now().date()
     return today - timedelta(days=MARKING_BUFFER_DAYS) <= d <= today
 
 
@@ -373,7 +384,7 @@ def add_labour():
     db.session.add(worker)
     db.session.flush()  # assign worker.id before the salary row references it
 
-    now = datetime.now()
+    now = ist_now()
     salary = Salary(
         worker_id=worker.id,
         name=name,
