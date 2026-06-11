@@ -307,7 +307,7 @@ async function showHistory(workerId) {
         // Group attendance by month
         const monthlyData = {};
         data.attendance.forEach(a => {
-            const date = new Date(a.date);
+            const date = parseDate(a.date);
             const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[monthKey]) {
                 monthlyData[monthKey] = {
@@ -327,7 +327,7 @@ async function showHistory(workerId) {
 
         const sortedMonths = Object.keys(monthlyData).sort().reverse();
         sortedMonths.forEach(monthKey => {
-            monthlyData[monthKey].records.sort((a, b) => new Date(a.date) - new Date(b.date));
+            monthlyData[monthKey].records.sort((a, b) => parseDate(a.date) - parseDate(b.date));
         });
 
         title.textContent = data.name;
@@ -353,7 +353,7 @@ async function showHistory(workerId) {
                             </div>
                             <div class="calendar-grid">
                                 ${month.records.map(a => {
-                                    const day = new Date(a.date).getDate();
+                                    const day = parseDate(a.date).getDate();
                                     return `
                                         <div class="day-cell ${a.status.toLowerCase()}" title="${a.date}${a.project ? ' - ' + a.project : ''}">
                                             <span class="day-num">${day}</span>
@@ -409,12 +409,41 @@ function setSummaryMode(mode) {
     }
 }
 
-// YYYY-MM-DD for `n` days ago — matches how the Mark flow derives dates
+// All dates are reckoned in IST, independent of the viewer's timezone. These
+// mirror the helpers in attendance.js/salary.js: toISOString() shifts to UTC and
+// parsing a bare "YYYY-MM-DD" treats it as UTC midnight — both roll the day back
+// for viewers behind UTC (which is why "Today" showed yesterday before ~05:30 IST).
+
+// Parse a date string ("YYYY-MM-DD" or ISO datetime) as a literal calendar date
+// in local time, so year/month/day/weekday read back exactly as written.
+function parseDate(dateStr) {
+    const [y, m, d] = dateStr.split('T')[0].split('-').map(Number);
+    return new Date(y, m - 1, d);
+}
+
+// Today's IST calendar date, as a Date at local midnight.
+function istToday() {
+    const ymd = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    return parseDate(ymd);
+}
+
+// Format a Date's local fields as YYYY-MM-DD (no toISOString/UTC shift).
+function isoDate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
+// YYYY-MM-DD for `n` days ago in IST — matches how the Mark flow derives dates
 // (attendance.js isoForDaysAgo), so "Today" here lines up with what was saved.
 function isoDaysAgo(n) {
-    const d = new Date();
+    const d = istToday();
     d.setDate(d.getDate() - n);
-    return d.toISOString().split('T')[0];
+    return isoDate(d);
 }
 
 function round1(n) { return Math.round((n || 0) * 10) / 10; }
@@ -528,18 +557,18 @@ function dayRow(r) {
 
 function setPeriod(range) {
     let start, end;
-    const today = new Date();
+    const today = istToday();
     if (range === 'week') {
         const day = today.getDay();
         const monday = new Date(today);
         monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
         const sunday = new Date(monday);
         sunday.setDate(monday.getDate() + 6);
-        start = monday.toISOString().split('T')[0];
-        end = sunday.toISOString().split('T')[0];
+        start = isoDate(monday);
+        end = isoDate(sunday);
     } else if (range === 'month') {
-        start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-        end = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+        start = isoDate(new Date(today.getFullYear(), today.getMonth(), 1));
+        end = isoDate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
     } else {  // custom — driven by the two date inputs
         start = document.getElementById('periodStartDate').value;
         end = document.getElementById('periodEndDate').value;
@@ -647,7 +676,7 @@ function renderPeriod(data) {
 }
 
 function formatDate(dateStr) {
-    const d = new Date(dateStr);
+    const d = parseDate(dateStr);
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 }
