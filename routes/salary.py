@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models import db, Salary, Attendance, Worker
+from models import db, Salary, Attendance, Worker, compute_pay
 from decimal import Decimal
 from sqlalchemy import func, case
 import calendar
@@ -23,6 +23,12 @@ def get_monthly_salaries():
         Salary.name
     ).all()
 
+    # Pay model per worker (single source of truth is the Worker master). Used
+    # to decide whether OT is paid; missing workers default to daily-rate.
+    monthly_flag = {
+        w.id: bool(w.monthly_salaried) for w in Worker.query.all()
+    }
+
     # Group by month
     months_data = {}
     for record in records:
@@ -33,12 +39,13 @@ def get_monthly_salaries():
                 'total_salary': Decimal('0')
             }
 
-        # Calculate base_pay and ot_pay
+        # Calculate base_pay and ot_pay. Monthly-salaried workers track OT but
+        # are never paid for it, so ot_pay is 0 for them (compute_pay enforces).
         base_salary = float(record.base_salary_per_day) if record.base_salary_per_day else 0
         working_days = record.total_working_days or 0
         ot_hours = float(record.ot_hours) if record.ot_hours else 0
-        base_pay = working_days * base_salary
-        ot_pay = (base_salary / 8) * ot_hours if base_salary > 0 else 0
+        is_monthly = monthly_flag.get(record.worker_id, False)
+        base_pay, ot_pay, _ = compute_pay(base_salary, working_days, ot_hours, monthly_salaried=is_monthly)
 
         months_data[month_key]['workers'].append({
             'id': record.id,
@@ -46,6 +53,7 @@ def get_monthly_salaries():
             'name': record.name,
             'designation': record.designation,
             'base_salary_per_day': base_salary,
+            'monthly_salaried': is_monthly,
             'working_days': working_days,
             'ot_hours': ot_hours,
             'base_pay': base_pay,
@@ -85,11 +93,13 @@ def update_salary(record_id):
 
     if 'base_salary_per_day' in data:
         salary.base_salary_per_day = data['base_salary_per_day']
-        # Recalculate total for this month
-        base_salary = float(salary.base_salary_per_day)
-        base_pay = salary.total_working_days * base_salary
-        ot_pay = (base_salary / 8) * float(salary.ot_hours) if base_salary > 0 else 0
-        salary.total_salary = base_pay + ot_pay
+        # Recalculate total for this month (OT excluded for monthly workers).
+        worker = Worker.query.get(salary.worker_id)
+        is_monthly = bool(worker.monthly_salaried) if worker else False
+        _, _, salary.total_salary = compute_pay(
+            salary.base_salary_per_day, salary.total_working_days, salary.ot_hours,
+            monthly_salaried=is_monthly
+        )
 
     if 'name' in data:
         salary.name = data['name']
@@ -117,9 +127,10 @@ def update_worker_salary(worker_id):
     base_salary = data.get('base_salary_per_day')
     designation = data.get('designation')
     name = data.get('name')
+    monthly_salaried = data.get('monthly_salaried')
 
-    if base_salary is None and designation is None and name is None:
-        return jsonify({'error': 'At least one field (name, designation, base_salary_per_day) is required'}), 400
+    if base_salary is None and designation is None and name is None and monthly_salaried is None:
+        return jsonify({'error': 'At least one field (name, designation, base_salary_per_day, monthly_salaried) is required'}), 400
 
     worker = Worker.query.get(worker_id)
     if worker is None:
@@ -132,8 +143,15 @@ def update_worker_salary(worker_id):
         worker.designation = designation
     if base_salary is not None:
         worker.base_salary_per_day = base_salary
+    if monthly_salaried is not None:
+        worker.monthly_salaried = bool(monthly_salaried)
 
-    # 2. Keep the monthly salary snapshots in sync.
+    # The effective pay model after this update — drives whether OT is paid.
+    is_monthly = bool(worker.monthly_salaried)
+
+    # 2. Keep the monthly salary snapshots in sync. A change to base pay OR the
+    # monthly-salaried flag re-prices every month (the flag toggles OT on/off).
+    reprice = base_salary is not None or monthly_salaried is not None
     records = Salary.query.filter_by(worker_id=worker_id).all()
     for salary in records:
         if name is not None:
@@ -142,9 +160,11 @@ def update_worker_salary(worker_id):
             salary.designation = designation
         if base_salary is not None:
             salary.base_salary_per_day = base_salary
-            base_pay = salary.total_working_days * float(base_salary)
-            ot_pay = (float(base_salary) / 8) * float(salary.ot_hours) if base_salary > 0 else 0
-            salary.total_salary = base_pay + ot_pay
+        if reprice:
+            _, _, salary.total_salary = compute_pay(
+                salary.base_salary_per_day, salary.total_working_days, salary.ot_hours,
+                monthly_salaried=is_monthly
+            )
 
     db.session.commit()
 

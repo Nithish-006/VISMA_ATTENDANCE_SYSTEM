@@ -55,6 +55,20 @@ def run_migrations(app):
                 db.session.commit()
                 app.logger.info("Migration: widened attendance.project to VARCHAR(300)")
 
+            # Pay model flag on the worker master. create_all() adds it to a
+            # fresh `worker` table but never to a pre-existing one, so add it
+            # explicitly. Defaults to 0 (daily-rate) so existing workers keep
+            # earning overtime exactly as before until toggled monthly-salaried.
+            if 'worker' in inspector.get_table_names():
+                worker_cols = {c['name'] for c in inspector.get_columns('worker')}
+                if 'monthly_salaried' not in worker_cols:
+                    db.session.execute(text(
+                        'ALTER TABLE worker ADD COLUMN monthly_salaried '
+                        'BOOLEAN NOT NULL DEFAULT 0'
+                    ))
+                    db.session.commit()
+                    app.logger.info("Migration: added worker.monthly_salaried")
+
             # Audit columns. create_all() adds these to the new `worker` table
             # but never to the pre-existing attendance/salary tables, so add
             # them explicitly. CURRENT_TIMESTAMP backfills existing rows with

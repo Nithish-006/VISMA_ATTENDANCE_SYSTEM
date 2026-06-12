@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models import db, Attendance, Salary, Supervisor, Worker
+from models import db, Attendance, Salary, Supervisor, Worker, compute_pay
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from sqlalchemy import func, case
@@ -127,6 +127,7 @@ def get_labours():
             'name': w.name,
             'designation': w.designation,
             'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
+            'monthly_salaried': bool(w.monthly_salaried),
             'last_attendance': last_att.date.isoformat() if last_att else None
         })
 
@@ -326,12 +327,14 @@ def _recalculate_monthly_salaries(affected_periods):
 
         working_days = int(stats.working_days or 0)
         ot_hours = float(stats.total_ot or 0)
-        base_salary = float(worker_info.base_salary_per_day) if worker_info.base_salary_per_day else 0
 
-        # Calculate salary
-        base_pay = working_days * base_salary
-        ot_pay = (base_salary / 8) * ot_hours if base_salary > 0 else 0
-        total = base_pay + ot_pay
+        # Calculate salary. Monthly-salaried workers are paid base x days only;
+        # their OT hours are still stored on the salary row for the record but
+        # are not paid (compute_pay enforces this).
+        _, _, total = compute_pay(
+            worker_info.base_salary_per_day, working_days, ot_hours,
+            monthly_salaried=worker_info.monthly_salaried
+        )
 
         # Upsert salary record for this month
         salary = Salary.query.filter_by(worker_id=worker_id, year=year, month=month).first()
@@ -474,7 +477,8 @@ def get_attendance_summary():
             worker_info_map[w.id] = {
                 'name': w.name,
                 'designation': w.designation,
-                'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0
+                'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
+                'monthly_salaried': bool(w.monthly_salaried)
             }
 
     # Aggregate by project
@@ -505,8 +509,11 @@ def get_attendance_summary():
             project_data[proj]['ot_hours'] += ot
             # Labor cost for this present-day: base day-rate plus overtime paid
             # at the per-hour rate (rate/8), matching the salary calculation.
-            rate = worker_info_map.get(r.worker_id, {}).get('base_salary_per_day', 0)
-            project_data[proj]['labor_cost'] += rate + (rate / 8) * ot
+            # Monthly-salaried workers are not paid OT, so it's excluded here too.
+            winfo = worker_info_map.get(r.worker_id, {})
+            rate = winfo.get('base_salary_per_day', 0)
+            _, day_ot_pay, _ = compute_pay(rate, 0, ot, monthly_salaried=winfo.get('monthly_salaried', False))
+            project_data[proj]['labor_cost'] += rate + day_ot_pay
             # Track this worker as present
             present_workers.add(r.worker_id)
 
@@ -530,6 +537,7 @@ def get_attendance_summary():
                 'worker_id': r.worker_id,
                 'name': info.get('name', f'Worker {r.worker_id}'),
                 'base_salary_per_day': info.get('base_salary_per_day', 0),
+                'monthly_salaried': info.get('monthly_salaried', False),
                 'present_days': 0,
                 'absent_days': 0,
                 'ot_hours': 0,
@@ -579,9 +587,11 @@ def get_attendance_summary():
     total_salary = 0.0
     for wid, data in sorted(worker_data.items(), key=lambda x: x[1]['name']):
         base = data['base_salary_per_day']
-        base_pay = data['present_days'] * base
-        ot_pay = (base / 8) * data['ot_hours'] if base > 0 else 0
-        salary = round(base_pay + ot_pay, 2)
+        _, _, total_pay = compute_pay(
+            base, data['present_days'], data['ot_hours'],
+            monthly_salaried=data['monthly_salaried']
+        )
+        salary = round(total_pay, 2)
         total_salary += salary
         workers_list.append({
             'worker_id': data['worker_id'],

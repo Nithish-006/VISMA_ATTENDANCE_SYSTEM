@@ -796,6 +796,7 @@ async function loadWorkerEditor() {
                                 <th>Name</th>
                                 <th>Designation</th>
                                 <th>Base Pay/Day</th>
+                                <th>Monthly Salaried</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -814,6 +815,12 @@ async function loadWorkerEditor() {
                                         </select>
                                     </td>
                                     <td data-label="Base Pay/Day"><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
+                                    <td data-label="Monthly Salaried" class="monthly-cell">
+                                        <label class="monthly-toggle" title="When on, overtime is tracked but NOT paid — pay is base × present days only.">
+                                            <input type="checkbox" class="edit-input edit-monthly" ${l.monthly_salaried ? 'checked' : ''} data-original="${!!l.monthly_salaried}" onchange="markEditChanged(this)">
+                                            <span>Monthly (no OT pay)</span>
+                                        </label>
+                                    </td>
                                     <td class="edit-actions-cell" style="white-space: nowrap;">
                                         <button class="edit-save-btn" onclick="saveWorkerDetails(${l.worker_id})">Save</button>
                                         <button class="edit-delete-btn" onclick="deleteWorker(${l.worker_id}, '${escapeHtml(l.name)}')">Delete</button>
@@ -833,7 +840,8 @@ async function loadWorkerEditor() {
 }
 
 function markEditChanged(input) {
-    if (input.value !== input.dataset.original) {
+    const current = input.type === 'checkbox' ? String(input.checked) : input.value;
+    if (current !== input.dataset.original) {
         input.classList.add('changed');
     } else {
         input.classList.remove('changed');
@@ -848,6 +856,7 @@ async function saveWorkerDetails(workerId) {
     const name = row.querySelector('.edit-name').value.trim();
     const designation = row.querySelector('.edit-designation').value;
     const basePay = parseFloat(row.querySelector('.edit-base-pay').value) || 0;
+    const monthlySalaried = row.querySelector('.edit-monthly').checked;
 
     if (!name) {
         status.textContent = 'Name required';
@@ -866,7 +875,8 @@ async function saveWorkerDetails(workerId) {
             body: JSON.stringify({
                 name: name,
                 designation: designation,
-                base_salary_per_day: basePay
+                base_salary_per_day: basePay,
+                monthly_salaried: monthlySalaried
             })
         });
 
@@ -879,6 +889,7 @@ async function saveWorkerDetails(workerId) {
         row.querySelector('.edit-name').dataset.original = name;
         row.querySelector('.edit-designation').dataset.original = designation;
         row.querySelector('.edit-base-pay').dataset.original = basePay;
+        row.querySelector('.edit-monthly').dataset.original = String(monthlySalaried);
         row.querySelectorAll('.edit-input').forEach(inp => inp.classList.remove('changed'));
 
         btn.textContent = 'Saved';

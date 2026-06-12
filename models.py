@@ -24,6 +24,12 @@ class Worker(db.Model):
     name = db.Column(db.String(100), nullable=False)
     designation = db.Column(db.String(50))
     base_salary_per_day = db.Column(db.Numeric(10, 2), default=0)
+    # Pay model. Daily-rate workers (default) earn overtime at the hourly rate
+    # (day-rate / 8). Monthly-salaried workers are paid base_salary_per_day x
+    # present days only — their overtime is still recorded against the day/site
+    # for tracking, but is never added to their pay. This flag is the single
+    # switch the salary calculation reads to decide whether OT is paid.
+    monthly_salaried = db.Column(db.Boolean, nullable=False, default=False)
     # Soft-delete flag. Wage history should not be destroyed outright; this lets
     # a worker be hidden without deleting their records. (The delete endpoint
     # still hard-deletes for now to preserve current behaviour — see routes.)
@@ -38,6 +44,7 @@ class Worker(db.Model):
             'name': self.name,
             'designation': self.designation,
             'base_salary_per_day': float(self.base_salary_per_day) if self.base_salary_per_day else 0,
+            'monthly_salaried': bool(self.monthly_salaried),
             'active': self.active,
         }
 
@@ -129,3 +136,23 @@ class Attendance(db.Model):
             'role': self.role,
             'work': self.work
         }
+
+
+def compute_pay(base_salary, working_days, ot_hours, monthly_salaried=False):
+    """Single source of truth for turning attendance into pay.
+
+    Returns (base_pay, ot_pay, total). Overtime is paid at the hourly rate
+    (day-rate / 8) for daily-rate workers, but NEVER for monthly-salaried
+    workers — for them OT is recorded for site/day tracking only and excluded
+    from pay. Every place that prices attendance must call this so the rule
+    stays consistent across the salary view, recalculation and summaries.
+    """
+    base_salary = float(base_salary or 0)
+    working_days = working_days or 0
+    ot_hours = float(ot_hours or 0)
+    base_pay = working_days * base_salary
+    if monthly_salaried or base_salary <= 0:
+        ot_pay = 0.0
+    else:
+        ot_pay = (base_salary / 8) * ot_hours
+    return base_pay, ot_pay, base_pay + ot_pay
