@@ -18,3 +18,10 @@ backups/
 
 # Generated reports (contain live data)
 reports/
+
+# Excel data files & generated reports (data, not source)
+*.xlsx
+*.xls
+
+# Prod data snapshots / dumps
+*_snapshot.json

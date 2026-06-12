@@ -804,7 +804,7 @@ async function loadWorkerEditor() {
                             ${labours.map(l => `
                                 <tr data-worker-id="${l.worker_id}" id="editRow_${l.worker_id}">
                                     <td class="id-cell" data-label="ID">${l.worker_id}</td>
-                                    <td data-label="Name"><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" oninput="markEditChanged(this)"></td>
+                                    <td data-label="Name"><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" style="text-transform: uppercase;" oninput="this.value = this.value.toUpperCase(); markEditChanged(this)"></td>
                                     <td data-label="Designation">
                                         <select class="edit-input edit-designation" data-original="${l.designation || ''}" onchange="markEditChanged(this)">
                                             <option value="">--</option>
@@ -853,7 +853,7 @@ async function saveWorkerDetails(workerId) {
     const btn = row.querySelector('.edit-save-btn');
     const status = document.getElementById(`editStatus_${workerId}`);
 
-    const name = row.querySelector('.edit-name').value.trim();
+    const name = row.querySelector('.edit-name').value.trim().toUpperCase();
     const designation = row.querySelector('.edit-designation').value;
     const basePay = parseFloat(row.querySelector('.edit-base-pay').value) || 0;
     const monthlySalaried = row.querySelector('.edit-monthly').checked;
@@ -969,7 +969,7 @@ async function deleteWorker(workerId, workerName) {
 async function addNewWorker(e) {
     e.preventDefault();
 
-    const name = document.getElementById('newName').value.trim();
+    const name = document.getElementById('newName').value.trim().toUpperCase();
     const designation = document.getElementById('newDesignation').value;
     const baseSalary = parseFloat(document.getElementById('newSalary').value) || 0;
 

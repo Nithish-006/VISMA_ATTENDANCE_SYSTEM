@@ -1,7 +1,20 @@
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import validates
 from datetime import datetime
 
 db = SQLAlchemy()
+
+
+def _normalize_name(value):
+    """Canonical form for a worker name: trimmed and fully upper-cased.
+
+    Enforced at the model layer so every write path (add-worker, salary edit,
+    bulk import) stores names identically, regardless of how the caller typed
+    them. Returns the value untouched if it isn't a string (e.g. None).
+    """
+    if isinstance(value, str):
+        return value.strip().upper()
+    return value
 
 
 class Worker(db.Model):
@@ -37,6 +50,10 @@ class Worker(db.Model):
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
+    @validates('name')
+    def _uppercase_name(self, key, value):
+        return _normalize_name(value)
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -69,6 +86,10 @@ class Salary(db.Model):
     __table_args__ = (
         db.UniqueConstraint('worker_id', 'year', 'month', name='unique_worker_month'),
     )
+
+    @validates('name')
+    def _uppercase_name(self, key, value):
+        return _normalize_name(value)
 
     def to_dict(self):
         return {
