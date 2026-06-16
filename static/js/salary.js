@@ -821,8 +821,8 @@ async function loadWorkerEditor() {
                                     <td data-label="Base Pay/Day"><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
                                     <td data-label="Pay Type" class="monthly-cell">
                                         <div class="pay-type-toggle" id="payType_${l.worker_id}" data-original="${l.monthly_salaried ? 'monthly' : 'daily'}" data-value="${l.monthly_salaried ? 'monthly' : 'daily'}" title="Daily wages: overtime paid at hourly rate. Monthly wages: overtime tracked but NOT paid.">
-                                            <button type="button" class="pay-type-opt ${l.monthly_salaried ? '' : 'active'}" data-val="daily" onclick="setPayType(${l.worker_id}, 'daily')">Daily wages</button>
-                                            <button type="button" class="pay-type-opt ${l.monthly_salaried ? 'active' : ''}" data-val="monthly" onclick="setPayType(${l.worker_id}, 'monthly')">Monthly wages</button>
+                                            <button type="button" class="pay-type-opt ${l.monthly_salaried ? '' : 'active'}" data-val="daily" onclick="setPayType(${l.worker_id}, 'daily')">Daily</button>
+                                            <button type="button" class="pay-type-opt ${l.monthly_salaried ? 'active' : ''}" data-val="monthly" onclick="setPayType(${l.worker_id}, 'monthly')">Monthly</button>
                                         </div>
                                     </td>
                                     <td class="edit-actions-cell" style="white-space: nowrap;">

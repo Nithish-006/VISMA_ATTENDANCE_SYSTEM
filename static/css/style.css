@@ -2777,39 +2777,51 @@ select.edit-input {
     white-space: nowrap;
 }
 
-/* Segmented Daily / Monthly wages toggle in the worker pay editor. */
+/* Apple-style segmented Daily / Monthly toggle in the worker pay editor.
+   A rounded pill track holds two options; the active one becomes a colored
+   rounded pill — green for Daily, indigo for Monthly — so the pay type reads
+   at a glance. */
 .pay-type-toggle {
     display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
     border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    background: var(--bg-primary);
 }
 
 .pay-type-opt {
-    padding: 7px 12px;
+    padding: 6px 16px;
     border: none;
+    border-radius: 999px;
     background: transparent;
     color: var(--text-secondary);
     font-size: 0.8125rem;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.15s ease, color 0.15s ease;
+    transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.pay-type-opt + .pay-type-opt {
-    border-left: 1px solid var(--border-light);
+.pay-type-opt:hover:not(.active) {
+    color: var(--text-primary);
 }
 
-.pay-type-opt.active {
-    background: var(--gradient-accent);
+.pay-type-opt[data-val="daily"].active {
+    background: var(--success);
     color: white;
+    box-shadow: 0 1px 3px var(--success-glow);
+}
+
+.pay-type-opt[data-val="monthly"].active {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 1px 3px var(--accent-glow);
 }
 
 .pay-type-toggle.changed {
     outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline-offset: 2px;
 }
 
 /* Pay-change confirmation modal */
