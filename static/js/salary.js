@@ -728,6 +728,10 @@ document.addEventListener('click', function(e) {
     if (e.target === modal) {
         closeHistoryModal();
     }
+    const payModal = document.getElementById('payChangeModal');
+    if (e.target === payModal) {
+        closePayChangeModal();
+    }
 });
 
 // ============================================
@@ -796,7 +800,7 @@ async function loadWorkerEditor() {
                                 <th>Name</th>
                                 <th>Designation</th>
                                 <th>Base Pay/Day</th>
-                                <th>Monthly Salaried</th>
+                                <th>Pay Type</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -815,11 +819,11 @@ async function loadWorkerEditor() {
                                         </select>
                                     </td>
                                     <td data-label="Base Pay/Day"><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
-                                    <td data-label="Monthly Salaried" class="monthly-cell">
-                                        <label class="monthly-toggle" title="When on, overtime is tracked but NOT paid — pay is base × present days only.">
-                                            <input type="checkbox" class="edit-input edit-monthly" ${l.monthly_salaried ? 'checked' : ''} data-original="${!!l.monthly_salaried}" onchange="markEditChanged(this)">
-                                            <span>Monthly (no OT pay)</span>
-                                        </label>
+                                    <td data-label="Pay Type" class="monthly-cell">
+                                        <div class="pay-type-toggle" id="payType_${l.worker_id}" data-original="${l.monthly_salaried ? 'monthly' : 'daily'}" data-value="${l.monthly_salaried ? 'monthly' : 'daily'}" title="Daily wages: overtime paid at hourly rate. Monthly wages: overtime tracked but NOT paid.">
+                                            <button type="button" class="pay-type-opt ${l.monthly_salaried ? '' : 'active'}" data-val="daily" onclick="setPayType(${l.worker_id}, 'daily')">Daily wages</button>
+                                            <button type="button" class="pay-type-opt ${l.monthly_salaried ? 'active' : ''}" data-val="monthly" onclick="setPayType(${l.worker_id}, 'monthly')">Monthly wages</button>
+                                        </div>
                                     </td>
                                     <td class="edit-actions-cell" style="white-space: nowrap;">
                                         <button class="edit-save-btn" onclick="saveWorkerDetails(${l.worker_id})">Save</button>
@@ -848,21 +852,71 @@ function markEditChanged(input) {
     }
 }
 
+// Flip the segmented Daily/Monthly wages toggle for a worker row and mark it
+// changed (vs the value loaded from the server) so unsaved edits stand out.
+function setPayType(workerId, value) {
+    const toggle = document.getElementById(`payType_${workerId}`);
+    if (!toggle) return;
+    toggle.dataset.value = value;
+    toggle.querySelectorAll('.pay-type-opt').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.val === value);
+    });
+    toggle.classList.toggle('changed', value !== toggle.dataset.original);
+}
+
+// Mirror of models.compute_pay (total only) so the confirmation dialog can show
+// the before→after impact per month without a round-trip. Overtime is paid at
+// the hourly rate (rate/8) for daily-wage workers, never for monthly ones.
+function computeMonthTotal(base, days, ot, monthly) {
+    base = parseFloat(base) || 0;
+    days = days || 0;
+    ot = parseFloat(ot) || 0;
+    const basePay = days * base;
+    const otPay = (monthly || base <= 0) ? 0 : (base / 8) * ot;
+    return basePay + otPay;
+}
+
 async function saveWorkerDetails(workerId) {
     const row = document.getElementById(`editRow_${workerId}`);
-    const btn = row.querySelector('.edit-save-btn');
     const status = document.getElementById(`editStatus_${workerId}`);
 
     const name = row.querySelector('.edit-name').value.trim().toUpperCase();
     const designation = row.querySelector('.edit-designation').value;
     const basePay = parseFloat(row.querySelector('.edit-base-pay').value) || 0;
-    const monthlySalaried = row.querySelector('.edit-monthly').checked;
+    const toggle = document.getElementById(`payType_${workerId}`);
+    const monthlySalaried = toggle.dataset.value === 'monthly';
 
     if (!name) {
         status.textContent = 'Name required';
         status.className = 'edit-status error';
         return;
     }
+
+    // Did anything that changes pay actually change? (Name/designation are just
+    // labels — they save silently and never re-price a month.)
+    const baseChanged = basePay !== (parseFloat(row.querySelector('.edit-base-pay').dataset.original) || 0);
+    const typeChanged = toggle.dataset.value !== toggle.dataset.original;
+
+    if (!baseChanged && !typeChanged) {
+        // Labels only — save straight through, no month re-pricing.
+        await submitWorkerDetails(workerId, {
+            name, designation, base_salary_per_day: basePay,
+            monthly_salaried: monthlySalaried, reprice_months: []
+        });
+        return;
+    }
+
+    // Pay-impacting change → ask which months to apply it to before saving.
+    openPayChangeModal(workerId, { name, designation, basePay, monthlySalaried, baseChanged });
+}
+
+// PUT the worker payload and reflect the result in the row. reprice_months
+// decides which monthly snapshots get recalculated server-side.
+async function submitWorkerDetails(workerId, payload) {
+    const row = document.getElementById(`editRow_${workerId}`);
+    const btn = row.querySelector('.edit-save-btn');
+    const status = document.getElementById(`editStatus_${workerId}`);
+    const toggle = document.getElementById(`payType_${workerId}`);
 
     btn.disabled = true;
     btn.textContent = 'Saving...';
@@ -872,12 +926,7 @@ async function saveWorkerDetails(workerId) {
         const response = await fetch(`/api/salary/worker/${workerId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name: name,
-                designation: designation,
-                base_salary_per_day: basePay,
-                monthly_salaried: monthlySalaried
-            })
+            body: JSON.stringify(payload)
         });
 
         if (!response.ok) {
@@ -886,10 +935,12 @@ async function saveWorkerDetails(workerId) {
         }
 
         // Update original values so changed highlighting clears
-        row.querySelector('.edit-name').dataset.original = name;
-        row.querySelector('.edit-designation').dataset.original = designation;
-        row.querySelector('.edit-base-pay').dataset.original = basePay;
-        row.querySelector('.edit-monthly').dataset.original = String(monthlySalaried);
+        row.querySelector('.edit-name').dataset.original = payload.name;
+        row.querySelector('.edit-designation').dataset.original = payload.designation;
+        row.querySelector('.edit-base-pay').dataset.original = payload.base_salary_per_day;
+        const newType = payload.monthly_salaried ? 'monthly' : 'daily';
+        toggle.dataset.original = newType;
+        toggle.classList.remove('changed');
         row.querySelectorAll('.edit-input').forEach(inp => inp.classList.remove('changed'));
 
         btn.textContent = 'Saved';
@@ -897,7 +948,7 @@ async function saveWorkerDetails(workerId) {
         status.textContent = '';
         status.className = 'edit-status success';
 
-        // A base-pay change recalculates monthly totals — refresh the summary.
+        // Re-priced months change monthly totals — refresh the summary.
         await refreshSalaryData();
 
         setTimeout(() => {
@@ -912,6 +963,100 @@ async function saveWorkerDetails(workerId) {
     } finally {
         btn.disabled = false;
     }
+}
+
+// ============================================
+// PAY-CHANGE CONFIRMATION MODAL
+// ============================================
+
+// Holds the in-flight pay change while the user picks which months to apply it
+// to. Cleared when the modal closes.
+let pendingPayChange = null;
+
+function openPayChangeModal(workerId, change) {
+    const row = document.getElementById(`editRow_${workerId}`);
+    const workerName = row.querySelector('.edit-name').value.trim().toUpperCase();
+
+    // Plain-language statement of the new rule.
+    const ruleEl = document.getElementById('payChangeRule');
+    const parts = [];
+    if (change.baseChanged) {
+        parts.push(`base pay set to ${formatCurrency(change.basePay)}/day`);
+    }
+    // typeChanged is implied when monthlySalaried differs; describe the OT rule.
+    parts.push(change.monthlySalaried
+        ? 'paid monthly wages — overtime is recorded but NOT paid'
+        : 'paid daily wages — overtime is paid at the hourly rate');
+    ruleEl.textContent = `${workerName} will be ${parts.join(', and ')}.`;
+
+    // Build the recent-month list: current month + up to 2 prior months that
+    // this worker has a salary row for (salaryData is newest-first).
+    const todayIST = istToday();
+    const curKey = `${todayIST.getFullYear()}-${String(todayIST.getMonth() + 1).padStart(2, '0')}`;
+
+    const monthRows = [];
+    for (const m of (salaryData || [])) {
+        if (monthRows.length >= 3) break;
+        const w = m.workers.find(x => x.worker_id === workerId);
+        if (!w) continue;
+        const oldTotal = w.total_salary || 0;
+        const base = change.baseChanged ? change.basePay : (w.base_salary_per_day || 0);
+        const newTotal = computeMonthTotal(base, w.working_days, w.ot_hours, change.monthlySalaried);
+        monthRows.push({
+            key: m.month,            // "YYYY-MM"
+            label: m.month_name,     // "June 2026"
+            isCurrent: m.month === curKey,
+            oldTotal,
+            newTotal
+        });
+    }
+
+    const container = document.getElementById('payChangeMonths');
+    if (monthRows.length === 0) {
+        container.innerHTML = '<div class="empty-state">No recorded months to adjust. The new setting applies going forward.</div>';
+    } else {
+        container.innerHTML = monthRows.map(mr => {
+            const changed = Math.round(mr.oldTotal) !== Math.round(mr.newTotal);
+            const amounts = changed
+                ? `<span class="old">${formatCurrency(mr.oldTotal)}</span><span>→</span><span class="new">${formatCurrency(mr.newTotal)}</span>`
+                : `<span class="same">${formatCurrency(mr.oldTotal)} (no change)</span>`;
+            return `
+                <label class="pay-change-month">
+                    <input type="checkbox" data-month="${mr.key}" ${mr.isCurrent ? 'checked' : ''}>
+                    <span class="pay-change-month-name">${mr.label}</span>
+                    ${mr.isCurrent ? '<span class="pay-change-month-current">this month</span>' : ''}
+                    <span class="pay-change-amounts">${amounts}</span>
+                </label>
+            `;
+        }).join('');
+    }
+
+    pendingPayChange = { workerId, change };
+    document.getElementById('payChangeModal').style.display = 'flex';
+}
+
+function closePayChangeModal() {
+    document.getElementById('payChangeModal').style.display = 'none';
+    pendingPayChange = null;
+}
+
+async function confirmPayChange() {
+    if (!pendingPayChange) return;
+    const { workerId, change } = pendingPayChange;
+
+    const reprice_months = Array.from(
+        document.querySelectorAll('#payChangeMonths input[type="checkbox"]:checked')
+    ).map(cb => cb.dataset.month);
+
+    closePayChangeModal();
+
+    await submitWorkerDetails(workerId, {
+        name: change.name,
+        designation: change.designation,
+        base_salary_per_day: change.basePay,
+        monthly_salaried: change.monthlySalaried,
+        reprice_months
+    });
 }
 
 async function deleteWorker(workerId, workerName) {

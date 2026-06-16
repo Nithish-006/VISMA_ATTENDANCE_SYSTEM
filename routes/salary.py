@@ -112,22 +112,25 @@ def update_salary(record_id):
 
 @salary_bp.route('/api/salary/worker/<int:worker_id>', methods=['PUT'])
 def update_worker_salary(worker_id):
-    """Update worker details.
+    """Update worker details — without silently rewriting wage history.
 
-    The Worker master is the single source of truth and is updated here. The
-    per-month salary snapshots are then kept in sync so the monthly salary view
-    stays consistent — this preserves prior behaviour: a name/designation change
-    is reflected across all months, and a base-pay change recalculates every
-    month's total.
+    The Worker master is the single source of truth and is always updated here,
+    so the new rate / pay model takes effect going forward (the current month is
+    recomputed from the master whenever attendance is next marked).
 
-    NOTE: retroactively re-pricing finalized past months on a base-pay change is
-    pointer #2; it is intentionally left as-is here pending that decision.
+    Name and designation are pure labels, so they propagate to every monthly
+    snapshot for consistency. A change to base pay or the pay model (daily vs
+    monthly), however, re-prices ONLY the months the caller explicitly lists in
+    `reprice_months` (["YYYY-MM", ...]). Past months not listed stay frozen at
+    the rate and total that were actually paid then — finalized history is never
+    retroactively rewritten unless the user opts a month in.
     """
     data = request.get_json()
     base_salary = data.get('base_salary_per_day')
     designation = data.get('designation')
     name = data.get('name')
     monthly_salaried = data.get('monthly_salaried')
+    reprice_months = data.get('reprice_months') or []
 
     if base_salary is None and designation is None and name is None and monthly_salaried is None:
         return jsonify({'error': 'At least one field (name, designation, base_salary_per_day, monthly_salaried) is required'}), 400
@@ -136,7 +139,7 @@ def update_worker_salary(worker_id):
     if worker is None:
         return jsonify({'error': 'Worker not found'}), 404
 
-    # 1. Update the master record (authoritative).
+    # 1. Update the master record (authoritative — drives future months).
     if name is not None:
         worker.name = name
     if designation is not None:
@@ -149,26 +152,42 @@ def update_worker_salary(worker_id):
     # The effective pay model after this update — drives whether OT is paid.
     is_monthly = bool(worker.monthly_salaried)
 
-    # 2. Keep the monthly salary snapshots in sync. A change to base pay OR the
-    # monthly-salaried flag re-prices every month (the flag toggles OT on/off).
-    reprice = base_salary is not None or monthly_salaried is not None
+    # Parse the opt-in month list into a set of (year, month) to re-price.
+    reprice_set = set()
+    for token in reprice_months:
+        try:
+            y, m = str(token).split('-')
+            reprice_set.add((int(y), int(m)))
+        except (ValueError, AttributeError):
+            continue
+
+    # 2. Sync the monthly snapshots. Labels (name/designation) propagate to all;
+    # base pay and total are rewritten ONLY for explicitly-selected months.
     records = Salary.query.filter_by(worker_id=worker_id).all()
+    repriced = 0
     for salary in records:
         if name is not None:
             salary.name = name
         if designation is not None:
             salary.designation = designation
-        if base_salary is not None:
-            salary.base_salary_per_day = base_salary
-        if reprice:
+        if (salary.year, salary.month) in reprice_set:
+            # Apply the new base rate to this month if one was provided; otherwise
+            # keep the month's own historical rate and only re-apply the OT rule.
+            if base_salary is not None:
+                salary.base_salary_per_day = base_salary
             _, _, salary.total_salary = compute_pay(
                 salary.base_salary_per_day, salary.total_working_days, salary.ot_hours,
                 monthly_salaried=is_monthly
             )
+            repriced += 1
 
     db.session.commit()
 
-    return jsonify({'message': f'Updated worker {worker_id} ({len(records)} months synced)', 'worker_id': worker_id})
+    return jsonify({
+        'message': f'Updated worker {worker_id} ({repriced} month(s) re-priced)',
+        'worker_id': worker_id,
+        'repriced_months': repriced
+    })
 
 
 @salary_bp.route('/api/salary/worker/<int:worker_id>', methods=['DELETE'])
