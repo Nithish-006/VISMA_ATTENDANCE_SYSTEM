@@ -69,6 +69,30 @@ def run_migrations(app):
                     db.session.commit()
                     app.logger.info("Migration: added worker.monthly_salaried")
 
+            # Per-month snapshot of the pay model. Stored on each salary row so a
+            # later pay-type change can never rewrite how an earlier month was
+            # paid. Backfilled once, right after the column is added: a month is
+            # marked daily-rate (0) when its frozen total proves OT was paid;
+            # otherwise it inherits the worker's current flag as the best guess
+            # (for no-OT months the choice doesn't affect pay either way).
+            if 'salary' in inspector.get_table_names():
+                salary_cols = {c['name'] for c in inspector.get_columns('salary')}
+                if 'monthly_salaried' not in salary_cols:
+                    db.session.execute(text(
+                        'ALTER TABLE salary ADD COLUMN monthly_salaried '
+                        'BOOLEAN NOT NULL DEFAULT 0'
+                    ))
+                    db.session.commit()
+                    db.session.execute(text(
+                        'UPDATE salary s JOIN worker w ON s.worker_id = w.id '
+                        'SET s.monthly_salaried = CASE '
+                        '  WHEN s.ot_hours > 0 AND '
+                        '       (s.total_salary - s.total_working_days * s.base_salary_per_day) > 0.005 '
+                        '  THEN 0 ELSE w.monthly_salaried END'
+                    ))
+                    db.session.commit()
+                    app.logger.info("Migration: added+backfilled salary.monthly_salaried")
+
             # Audit columns. create_all() adds these to the new `worker` table
             # but never to the pre-existing attendance/salary tables, so add
             # them explicitly. CURRENT_TIMESTAMP backfills existing rows with

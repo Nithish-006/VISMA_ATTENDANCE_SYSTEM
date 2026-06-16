@@ -364,6 +364,10 @@ function formatCurrency(amount) {
 // EXCEL EXPORT
 // ============================================
 
+// The workbook is built entirely server-side (GET /api/salary/export) so every
+// figure flows through compute_pay — the single source of truth shared with the
+// dashboard and salary view. This avoids the report ever drifting from the
+// on-screen numbers, which is what happened when the maths lived here in JS.
 async function exportExcel() {
     if (!salaryData || salaryData.length === 0) {
         alert('No data to export');
@@ -380,221 +384,32 @@ async function exportExcel() {
     `;
 
     try {
-        // Check if a project filter is selected
+        // Scope the report to the selected project, if any (server applies it).
         const selectedProject = document.getElementById('salaryProject')?.value || '';
-
-        // Fetch attendance data (filtered by project if selected)
-        let exportUrl = '/api/attendance/export';
+        let exportUrl = '/api/salary/export';
         if (selectedProject) {
             exportUrl += `?project=${encodeURIComponent(selectedProject)}`;
         }
-        const attendanceResponse = await fetch(exportUrl);
-        const attendanceData = await attendanceResponse.json();
 
-        // Create workbook
-        const wb = XLSX.utils.book_new();
+        const response = await fetch(exportUrl);
+        if (!response.ok) throw new Error(`Export failed: ${response.status}`);
 
-        // Process each month separately
-        for (const month of salaryData) {
-            const monthAbbr = month.month_name.split(' ')[0].toUpperCase().substring(0, 3);
-            const year = month.year;
-            const yearShort = String(year).slice(-2);
-            const monthNum = month.month_num;
-            const sheetName = `${monthAbbr}-${yearShort}`;
-
-            // Get days in this month
-            const daysInMonth = new Date(year, monthNum, 0).getDate();
-
-            // Filter attendance for this month
-            const monthAttendance = attendanceData.filter(a => {
-                const d = parseDate(a.date);
-                return d.getFullYear() === year && (d.getMonth() + 1) === monthNum;
-            });
-
-            // Build attendance map: worker_id -> day -> {status, ot, project}
-            const attendanceMap = {};
-            monthAttendance.forEach(a => {
-                const day = parseDate(a.date).getDate();
-                if (!attendanceMap[a.worker_id]) {
-                    attendanceMap[a.worker_id] = {};
-                }
-                attendanceMap[a.worker_id][day] = {
-                    status: a.status,
-                    ot: a.ot_hours || '',
-                    project: a.project || '',
-                    work: a.work || ''
-                };
-            });
-
-            // Filter workers to only those with attendance in this month when project is selected
-            const monthWorkers = selectedProject
-                ? month.workers.filter(w => attendanceMap[w.worker_id])
-                : month.workers;
-
-            // Skip this month if no workers match the project filter
-            if (monthWorkers.length === 0) continue;
-
-            // Build header rows
-            const titleRow = [`LABOUR ATTENDANCE FOR ${sheetName}`];
-            // The role is the worker's fixed designation, so it lives in the Name
-            // column ("NAME - DESIGNATION") instead of being repeated per day.
-            const headerRow1 = ['S. No', 'Name'];
-            const headerRow2 = ['', ''];
-
-            for (let day = 1; day <= daysInMonth; day++) {
-                const date = new Date(year, monthNum - 1, day);
-                const isSunday = date.getDay() === 0;
-
-                if (isSunday) {
-                    headerRow1.push(`${day} SUNDAY`, '', '', '');
-                } else {
-                    headerRow1.push(day, '', '', '');
-                }
-                headerRow2.push('', 'OT', 'Pr', 'Work');
-            }
-
-            headerRow1.push(`${sheetName} MONTH LABOUR ATTENDANCE & PAYMENT`, '', '', '', '', '');
-            headerRow2.push('TOTAL PRESENT', 'TOTAL OT', 'BASE SALARY', 'BASE PAY', 'OT PAY', 'TOTAL SALARY');
-
-            // Build data rows
-            const dataRows = [];
-            let sNo = 1;
-
-            monthWorkers.forEach(w => {
-                // Fixed role travels with the name in a single "NAME - DESIGNATION" cell.
-                const nameWithRole = w.designation ? `${w.name} - ${w.designation}` : w.name;
-                const row = [sNo++, nameWithRole];
-
-                for (let day = 1; day <= daysInMonth; day++) {
-                    const att = attendanceMap[w.worker_id]?.[day];
-                    if (att) {
-                        row.push(att.status, att.ot || '', att.project || '', att.work || '');
-                    } else {
-                        row.push('', '', '', '');
-                    }
-                }
-
-                row.push(
-                    w.working_days,
-                    w.ot_hours,
-                    w.base_salary_per_day || 0,
-                    w.base_pay || 0,
-                    w.ot_pay || 0,
-                    w.total_salary
-                );
-
-                dataRows.push(row);
-            });
-
-            // --- Summary sections below worker rows ---
-
-            // Compute summary data from this month's attendance
-            const totalWorkers = monthWorkers.length;
-            const totalPresent = monthWorkers.reduce((s, w) => s + (w.working_days || 0), 0);
-            const totalOT = monthWorkers.reduce((s, w) => s + (w.ot_hours || 0), 0);
-            const totalSalaryAmt = monthWorkers.reduce((s, w) => s + (w.total_salary || 0), 0);
-
-            // Project breakdown
-            const rateById = {};
-            monthWorkers.forEach(w => { rateById[w.worker_id] = w.base_salary_per_day || 0; });
-
-            const projectStats = {};
-            monthAttendance.forEach(a => {
-                const proj = a.project || 'Unassigned';
-                if (!projectStats[proj]) {
-                    projectStats[proj] = { workerIds: new Set(), presentDates: new Set(), otHours: 0, laborCost: 0 };
-                }
-                projectStats[proj].workerIds.add(a.worker_id);
-                if (a.status === 'P') {
-                    projectStats[proj].presentDates.add(a.date);
-                    // base day-rate + overtime at the per-hour rate (rate/8)
-                    const rate = rateById[a.worker_id] || 0;
-                    projectStats[proj].laborCost += rate + (rate / 8) * (a.ot_hours || 0);
-                }
-                projectStats[proj].otHours += (a.ot_hours || 0);
-            });
-
-            // Daily headcount
-            const dailyStats = {};
-            monthAttendance.forEach(a => {
-                const day = parseDate(a.date).getDate();
-                if (!dailyStats[day]) {
-                    dailyStats[day] = { present: 0, absent: 0, holiday: 0, otHours: 0 };
-                }
-                if (a.status === 'P') dailyStats[day].present++;
-                else if (a.status === 'A') dailyStats[day].absent++;
-                else if (a.status === 'H') dailyStats[day].holiday++;
-                dailyStats[day].otHours += (a.ot_hours || 0);
-            });
-
-            // Build summary rows
-            const summaryRows = [];
-
-            // Blank separator
-            summaryRows.push([]);
-
-            // Overall summary
-            summaryRows.push(['MONTHLY SUMMARY']);
-            summaryRows.push(['Total Workers', totalWorkers, '', 'Total Present Days', totalPresent, '', 'Total OT Hours', totalOT, '', 'Total Salary', totalSalaryAmt]);
-
-            // Blank separator
-            summaryRows.push([]);
-
-            // Project breakdown
-            summaryRows.push(['PROJECT BREAKDOWN']);
-            summaryRows.push(['Project', 'Workers', 'Working Days', 'OT Hours', 'Labor Cost']);
-            for (const [proj, stats] of Object.entries(projectStats).sort()) {
-                summaryRows.push([proj, stats.workerIds.size, stats.presentDates.size, Math.round(stats.otHours * 100) / 100, Math.round(stats.laborCost * 100) / 100]);
-            }
-
-            // Blank separator
-            summaryRows.push([]);
-
-            // Daily headcount
-            summaryRows.push(['DAILY HEADCOUNT']);
-            summaryRows.push(['Day', 'Date', 'Present', 'Absent', 'Holiday', 'OT Hours']);
-            for (let day = 1; day <= daysInMonth; day++) {
-                const ds = dailyStats[day];
-                if (!ds) continue;
-                const date = new Date(year, monthNum - 1, day);
-                const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                const dayName = dayNames[date.getDay()];
-                const dateStr = `${day}/${monthNum}/${year}`;
-                summaryRows.push([dayName, dateStr, ds.present, ds.absent, ds.holiday, Math.round(ds.otHours * 100) / 100]);
-            }
-
-            const sheetData = [titleRow, headerRow1, headerRow2, ...dataRows, ...summaryRows];
-            const sheet = XLSX.utils.aoa_to_sheet(sheetData);
-
-            const cols = [
-                { wch: 5 },
-                { wch: 28 }
-            ];
-
-            for (let day = 1; day <= daysInMonth; day++) {
-                cols.push({ wch: 3 }, { wch: 3 }, { wch: 8 }, { wch: 10 });
-            }
-
-            cols.push(
-                { wch: 13 },
-                { wch: 10 },
-                { wch: 12 },
-                { wch: 10 },
-                { wch: 10 },
-                { wch: 12 }
-            );
-
-            sheet['!cols'] = cols;
-            sheet['!merges'] = [
-                { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }
-            ];
-
-            XLSX.utils.book_append_sheet(wb, sheet, sheetName);
-        }
-
+        // Prefer the server-supplied filename, fall back to a sensible default.
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="?([^"]+)"?/);
         const projectSuffix = selectedProject ? `_${selectedProject.replace(/\s+/g, '_')}` : '';
-        const fileName = `salary_report${projectSuffix}_${isoDate(istToday())}.xlsx`;
-        XLSX.writeFile(wb, fileName);
+        const fileName = match ? match[1] : `salary_report${projectSuffix}_${isoDate(istToday())}.xlsx`;
+
+        // Stream the .xlsx bytes to a download.
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
 
     } catch (error) {
         console.error('Export failed:', error);
@@ -728,10 +543,6 @@ document.addEventListener('click', function(e) {
     if (e.target === modal) {
         closeHistoryModal();
     }
-    const payModal = document.getElementById('payChangeModal');
-    if (e.target === payModal) {
-        closePayChangeModal();
-    }
 });
 
 // ============================================
@@ -864,18 +675,6 @@ function setPayType(workerId, value) {
     toggle.classList.toggle('changed', value !== toggle.dataset.original);
 }
 
-// Mirror of models.compute_pay (total only) so the confirmation dialog can show
-// the before→after impact per month without a round-trip. Overtime is paid at
-// the hourly rate (rate/8) for daily-wage workers, never for monthly ones.
-function computeMonthTotal(base, days, ot, monthly) {
-    base = parseFloat(base) || 0;
-    days = days || 0;
-    ot = parseFloat(ot) || 0;
-    const basePay = days * base;
-    const otPay = (monthly || base <= 0) ? 0 : (base / 8) * ot;
-    return basePay + otPay;
-}
-
 async function saveWorkerDetails(workerId) {
     const row = document.getElementById(`editRow_${workerId}`);
     const status = document.getElementById(`editStatus_${workerId}`);
@@ -893,25 +692,34 @@ async function saveWorkerDetails(workerId) {
     }
 
     // Did anything that changes pay actually change? (Name/designation are just
-    // labels — they save silently and never re-price a month.)
+    // labels — they save silently and never re-price a month.) Pay-impacting
+    // changes apply to this month and every later month; earlier months stay
+    // frozen at what was already paid, so a quick confirm is enough.
     const baseChanged = basePay !== (parseFloat(row.querySelector('.edit-base-pay').dataset.original) || 0);
     const typeChanged = toggle.dataset.value !== toggle.dataset.original;
 
-    if (!baseChanged && !typeChanged) {
-        // Labels only — save straight through, no month re-pricing.
-        await submitWorkerDetails(workerId, {
-            name, designation, base_salary_per_day: basePay,
-            monthly_salaried: monthlySalaried, reprice_months: []
-        });
-        return;
+    if (baseChanged || typeChanged) {
+        const rule = monthlySalaried
+            ? 'paid monthly wages (overtime tracked but NOT paid)'
+            : 'paid daily wages (overtime paid at the hourly rate)';
+        const ok = confirm(
+            `${name} will be ${rule}` +
+            (baseChanged ? ` at ${formatCurrency(basePay)}/day` : '') +
+            `.\n\nThis applies to the current month and going forward. ` +
+            `Earlier months stay unchanged.`
+        );
+        if (!ok) return;
     }
 
-    // Pay-impacting change → ask which months to apply it to before saving.
-    openPayChangeModal(workerId, { name, designation, basePay, monthlySalaried, baseChanged });
+    await submitWorkerDetails(workerId, {
+        name, designation, base_salary_per_day: basePay,
+        monthly_salaried: monthlySalaried
+    });
 }
 
-// PUT the worker payload and reflect the result in the row. reprice_months
-// decides which monthly snapshots get recalculated server-side.
+// PUT the worker payload and reflect the result in the row. Pay-impacting
+// changes re-price the current month and forward server-side; earlier months
+// stay frozen.
 async function submitWorkerDetails(workerId, payload) {
     const row = document.getElementById(`editRow_${workerId}`);
     const btn = row.querySelector('.edit-save-btn');
@@ -963,100 +771,6 @@ async function submitWorkerDetails(workerId, payload) {
     } finally {
         btn.disabled = false;
     }
-}
-
-// ============================================
-// PAY-CHANGE CONFIRMATION MODAL
-// ============================================
-
-// Holds the in-flight pay change while the user picks which months to apply it
-// to. Cleared when the modal closes.
-let pendingPayChange = null;
-
-function openPayChangeModal(workerId, change) {
-    const row = document.getElementById(`editRow_${workerId}`);
-    const workerName = row.querySelector('.edit-name').value.trim().toUpperCase();
-
-    // Plain-language statement of the new rule.
-    const ruleEl = document.getElementById('payChangeRule');
-    const parts = [];
-    if (change.baseChanged) {
-        parts.push(`base pay set to ${formatCurrency(change.basePay)}/day`);
-    }
-    // typeChanged is implied when monthlySalaried differs; describe the OT rule.
-    parts.push(change.monthlySalaried
-        ? 'paid monthly wages — overtime is recorded but NOT paid'
-        : 'paid daily wages — overtime is paid at the hourly rate');
-    ruleEl.textContent = `${workerName} will be ${parts.join(', and ')}.`;
-
-    // Build the recent-month list: current month + up to 2 prior months that
-    // this worker has a salary row for (salaryData is newest-first).
-    const todayIST = istToday();
-    const curKey = `${todayIST.getFullYear()}-${String(todayIST.getMonth() + 1).padStart(2, '0')}`;
-
-    const monthRows = [];
-    for (const m of (salaryData || [])) {
-        if (monthRows.length >= 3) break;
-        const w = m.workers.find(x => x.worker_id === workerId);
-        if (!w) continue;
-        const oldTotal = w.total_salary || 0;
-        const base = change.baseChanged ? change.basePay : (w.base_salary_per_day || 0);
-        const newTotal = computeMonthTotal(base, w.working_days, w.ot_hours, change.monthlySalaried);
-        monthRows.push({
-            key: m.month,            // "YYYY-MM"
-            label: m.month_name,     // "June 2026"
-            isCurrent: m.month === curKey,
-            oldTotal,
-            newTotal
-        });
-    }
-
-    const container = document.getElementById('payChangeMonths');
-    if (monthRows.length === 0) {
-        container.innerHTML = '<div class="empty-state">No recorded months to adjust. The new setting applies going forward.</div>';
-    } else {
-        container.innerHTML = monthRows.map(mr => {
-            const changed = Math.round(mr.oldTotal) !== Math.round(mr.newTotal);
-            const amounts = changed
-                ? `<span class="old">${formatCurrency(mr.oldTotal)}</span><span>→</span><span class="new">${formatCurrency(mr.newTotal)}</span>`
-                : `<span class="same">${formatCurrency(mr.oldTotal)} (no change)</span>`;
-            return `
-                <label class="pay-change-month">
-                    <input type="checkbox" data-month="${mr.key}" ${mr.isCurrent ? 'checked' : ''}>
-                    <span class="pay-change-month-name">${mr.label}</span>
-                    ${mr.isCurrent ? '<span class="pay-change-month-current">this month</span>' : ''}
-                    <span class="pay-change-amounts">${amounts}</span>
-                </label>
-            `;
-        }).join('');
-    }
-
-    pendingPayChange = { workerId, change };
-    document.getElementById('payChangeModal').style.display = 'flex';
-}
-
-function closePayChangeModal() {
-    document.getElementById('payChangeModal').style.display = 'none';
-    pendingPayChange = null;
-}
-
-async function confirmPayChange() {
-    if (!pendingPayChange) return;
-    const { workerId, change } = pendingPayChange;
-
-    const reprice_months = Array.from(
-        document.querySelectorAll('#payChangeMonths input[type="checkbox"]:checked')
-    ).map(cb => cb.dataset.month);
-
-    closePayChangeModal();
-
-    await submitWorkerDetails(workerId, {
-        name: change.name,
-        designation: change.designation,
-        base_salary_per_day: change.basePay,
-        monthly_salaried: change.monthlySalaried,
-        reprice_months
-    });
 }
 
 async function deleteWorker(workerId, workerName) {

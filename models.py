@@ -75,6 +75,11 @@ class Salary(db.Model):
     name = db.Column(db.String(100), nullable=False)
     designation = db.Column(db.String(50))
     base_salary_per_day = db.Column(db.Numeric(10, 2), default=0)
+    # The pay model that applied THIS month, snapshotted from the worker master
+    # when the month was computed. Stored per month (not read live) so that
+    # converting a worker to/from monthly-salaried never rewrites how an earlier
+    # month was paid — last month stays on the rule it was actually paid under.
+    monthly_salaried = db.Column(db.Boolean, nullable=False, default=False)
     year = db.Column(db.Integer, nullable=False)
     month = db.Column(db.Integer, nullable=False)  # 1-12
     total_working_days = db.Column(db.Integer, default=0)
@@ -98,6 +103,7 @@ class Salary(db.Model):
             'name': self.name,
             'designation': self.designation,
             'base_salary_per_day': float(self.base_salary_per_day) if self.base_salary_per_day else 0,
+            'monthly_salaried': bool(self.monthly_salaried),
             'year': self.year,
             'month': self.month,
             'total_working_days': self.total_working_days,

@@ -342,6 +342,7 @@ def _recalculate_monthly_salaries(affected_periods):
         if salary:
             salary.total_working_days = working_days
             salary.ot_hours = ot_hours
+            salary.monthly_salaried = bool(worker_info.monthly_salaried)
             salary.total_salary = total
         else:
             salary = Salary(
@@ -349,6 +350,7 @@ def _recalculate_monthly_salaries(affected_periods):
                 name=worker_info.name,
                 designation=worker_info.designation,
                 base_salary_per_day=worker_info.base_salary_per_day,
+                monthly_salaried=bool(worker_info.monthly_salaried),
                 year=year,
                 month=month,
                 total_working_days=working_days,
@@ -393,6 +395,7 @@ def add_labour():
         name=name,
         designation=designation,
         base_salary_per_day=base_salary,
+        monthly_salaried=bool(worker.monthly_salaried),
         year=now.year,
         month=now.month,
         total_working_days=0,
@@ -481,6 +484,35 @@ def get_attendance_summary():
                 'monthly_salaried': bool(w.monthly_salaried)
             }
 
+    # Frozen per-month pay basis, keyed by (worker_id, year, month). Each day is
+    # priced at the rate AND pay model that were actually in force that month
+    # (the monthly snapshot), NOT the worker's current master values — so
+    # changing a worker's pay never rewrites what a past month cost. OT is paid
+    # only for daily-rate months (monthly_salaried = False) with a positive rate.
+    snapshot_basis = {}
+    if worker_ids:
+        for s in Salary.query.filter(Salary.worker_id.in_(worker_ids)).all():
+            base = float(s.base_salary_per_day) if s.base_salary_per_day else 0
+            paid_ot = base > 0 and not bool(s.monthly_salaried)
+            snapshot_basis[(s.worker_id, s.year, s.month)] = (base, paid_ot)
+
+    def day_pay_for(record, ot_hours):
+        """(rate, ot_pay) for one present day, using that month's frozen basis.
+
+        Falls back to the live master rate only when a month has no snapshot yet
+        (e.g. brand-new data) — for which a daily-rate worker is paid OT and a
+        monthly-salaried one is not, matching compute_pay.
+        """
+        key = (record.worker_id, record.date.year, record.date.month)
+        if key in snapshot_basis:
+            rate, paid_ot = snapshot_basis[key]
+        else:
+            winfo = worker_info_map.get(record.worker_id, {})
+            rate = winfo.get('base_salary_per_day', 0)
+            paid_ot = rate > 0 and not winfo.get('monthly_salaried', False)
+        ot_pay = (rate / 8) * ot_hours if paid_ot else 0
+        return rate, ot_pay
+
     # Aggregate by project
     project_data = {}
     # Aggregate by date
@@ -500,6 +532,11 @@ def get_attendance_summary():
         proj = r.project or 'Unassigned'
         date_str = r.date.isoformat()
 
+        # Price this record at its month's frozen basis. base_rate is earned only
+        # on present days; ot_pay applies to any day that logged overtime (the
+        # monthly snapshot counts OT regardless of status, so we match it).
+        rate, ot_pay = day_pay_for(r, ot)
+
         # Project aggregation - only include present workers
         if r.status == 'P':
             if proj not in project_data:
@@ -507,13 +544,9 @@ def get_attendance_summary():
             project_data[proj]['worker_ids'].add(r.worker_id)
             project_data[proj]['present_dates'].add(r.date)
             project_data[proj]['ot_hours'] += ot
-            # Labor cost for this present-day: base day-rate plus overtime paid
-            # at the per-hour rate (rate/8), matching the salary calculation.
-            # Monthly-salaried workers are not paid OT, so it's excluded here too.
-            winfo = worker_info_map.get(r.worker_id, {})
-            rate = winfo.get('base_salary_per_day', 0)
-            _, day_ot_pay, _ = compute_pay(rate, 0, ot, monthly_salaried=winfo.get('monthly_salaried', False))
-            project_data[proj]['labor_cost'] += rate + day_ot_pay
+            # Labor cost for this present-day: that month's frozen day-rate plus
+            # overtime, priced exactly as the salary report does.
+            project_data[proj]['labor_cost'] += rate + ot_pay
             # Track this worker as present
             present_workers.add(r.worker_id)
 
@@ -536,20 +569,22 @@ def get_attendance_summary():
             worker_data[r.worker_id] = {
                 'worker_id': r.worker_id,
                 'name': info.get('name', f'Worker {r.worker_id}'),
-                'base_salary_per_day': info.get('base_salary_per_day', 0),
-                'monthly_salaried': info.get('monthly_salaried', False),
                 'present_days': 0,
                 'absent_days': 0,
                 'ot_hours': 0,
+                'salary': 0.0,
                 'projects': set(),
                 'roles': set(),
                 'works': set()
             }
         if r.status == 'P':
             worker_data[r.worker_id]['present_days'] += 1
+            worker_data[r.worker_id]['salary'] += rate  # base earned this present day
         elif r.status == 'A':
             worker_data[r.worker_id]['absent_days'] += 1
         worker_data[r.worker_id]['ot_hours'] += ot
+        # OT pay accrues wherever OT was logged, matching the monthly snapshot.
+        worker_data[r.worker_id]['salary'] += ot_pay
         if r.project:
             worker_data[r.worker_id]['projects'].add(r.project)
         if r.role:
@@ -586,12 +621,8 @@ def get_attendance_summary():
     workers_list = []
     total_salary = 0.0
     for wid, data in sorted(worker_data.items(), key=lambda x: x[1]['name']):
-        base = data['base_salary_per_day']
-        _, _, total_pay = compute_pay(
-            base, data['present_days'], data['ot_hours'],
-            monthly_salaried=data['monthly_salaried']
-        )
-        salary = round(total_pay, 2)
+        # Salary was accumulated per present-day at each month's frozen rate.
+        salary = round(data['salary'], 2)
         total_salary += salary
         workers_list.append({
             'worker_id': data['worker_id'],
