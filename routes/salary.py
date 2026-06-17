@@ -2,9 +2,11 @@ from flask import Blueprint, request, jsonify, send_file
 from models import db, Salary, Attendance, Worker, compute_pay
 from routes.attendance import ist_now
 from decimal import Decimal
+from datetime import datetime, date
 from sqlalchemy import func, case
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from io import BytesIO
 import calendar
 
@@ -216,212 +218,402 @@ def delete_worker(worker_id):
     })
 
 
+# --- Report styling palette (shared across every sheet) -------------------
+# A single palette keeps the workbook visually consistent and is the only place
+# colours are defined, so the report's look can be retuned in one spot.
+_HEADER_FILL = PatternFill('solid', fgColor='1F2937')   # slate
+_HEADER_FONT = Font(bold=True, color='FFFFFF', size=11)
+_TITLE_FONT = Font(bold=True, size=15, color='111827')
+_SUB_FONT = Font(italic=True, size=10, color='6B7280')
+_SECTION_FILL = PatternFill('solid', fgColor='374151')
+_SECTION_FONT = Font(bold=True, color='FFFFFF', size=11)
+_TOTAL_FILL = PatternFill('solid', fgColor='FDE68A')    # amber band for totals
+_TOTAL_FONT = Font(bold=True, size=11, color='111827')
+_MONEY_FILL = PatternFill('solid', fgColor='FEF9C3')    # pale yellow money column
+_MONTHLY_FILL = PatternFill('solid', fgColor='DBEAFE')  # blue  = monthly-salaried
+_DAILY_FILL = PatternFill('solid', fgColor='DCFCE7')    # green = daily-rate
+_BAND_FILL = PatternFill('solid', fgColor='F9FAFB')     # zebra striping
+_STATUS_STYLE = {  # (fill, font) per attendance status
+    'P': (PatternFill('solid', fgColor='D1FAE5'), Font(bold=True, color='065F46')),
+    'A': (PatternFill('solid', fgColor='FEE2E2'), Font(bold=True, color='991B1B')),
+    'H': (PatternFill('solid', fgColor='FEF3C7'), Font(bold=True, color='92400E')),
+}
+_THIN = Side(style='thin', color='D1D5DB')
+_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+_CENTER = Alignment(horizontal='center', vertical='center')
+_LEFT = Alignment(horizontal='left', vertical='center')
+_MONEY_FMT = '#,##0'
+
+
 @salary_bp.route('/api/salary/export', methods=['GET'])
 def export_salary_report():
-    """Build the salary report .xlsx entirely server-side.
+    """Build a clean, filter-scoped salary + attendance report (.xlsx).
 
-    All pay figures flow through compute_pay (the single source of truth), so
-    the workbook can never drift from the dashboard / salary view the way the
-    old client-side calculation did. One sheet per month, newest first.
+    The workbook honours exactly the filters chosen on the salary dashboard —
+    the From/To date range, the project, and the labour — so it never dumps
+    every month the way the old report did. Every pay figure is priced through
+    the same frozen monthly-snapshot basis the dashboard uses (present-day x
+    that month's rate; OT paid for daily-rate workers only), so the report can
+    never drift from what is shown on screen.
 
-    Worker pay rows come from the frozen monthly Salary snapshots; the per-month
-    project and daily breakdowns are computed from the attendance records, using
-    the same present-only + monthly-salaried-OT-excluded rules the dashboard
-    applies. An optional ?project= filter scopes to a single project.
+    Three sheets:
+      1. Worker Summary    - the complete per-worker picture (pay type, day
+         rate, present / absent, OT, base pay, OT pay, total salary), with
+         colour highlights so monthly-salaried vs daily-rate reads at a glance.
+      2. Daily Attendance  - one row per worker per day: status, OT, project and
+         work-type, with colour-coded status cells.
+      3. Daily & Project   - headcount per day and per-project labour cost.
     """
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
     project = request.args.get('project', '').strip()
+    worker_id_str = request.args.get('worker_id', '').strip()
 
-    # Frozen per-month pay snapshots, newest first (mirrors /api/salary/monthly).
-    salary_records = Salary.query.order_by(
-        Salary.year.desc(), Salary.month.desc(), Salary.name
-    ).all()
+    # The date range scopes the entire report. The dashboard always supplies it;
+    # we only fall back to all-time if it is somehow missing, so a clicked
+    # download never 400s.
+    try:
+        start_date = (datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                      if start_date_str else date(2000, 1, 1))
+        end_date = (datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                    if end_date_str else ist_now().date())
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
 
-    months = {}  # (year, month) -> [worker pay dicts]
-    for rec in salary_records:
-        # Every figure comes from the frozen snapshot — never recomputed from the
-        # live pay model. base_pay is days x the month's rate; the stored total
-        # already reflects whether OT was paid, so ot_pay is the remainder.
-        base = float(rec.base_salary_per_day) if rec.base_salary_per_day else 0
-        working_days = rec.total_working_days or 0
-        ot_hours = float(rec.ot_hours) if rec.ot_hours else 0
-        total = float(rec.total_salary) if rec.total_salary else 0
-        base_pay = round(working_days * base, 2)
-        ot_pay = max(0.0, round(total - base_pay, 2))
-        months.setdefault((rec.year, rec.month), []).append({
-            'worker_id': rec.worker_id,
-            'name': rec.name,
-            'designation': rec.designation,
-            'base_salary_per_day': base,
-            'working_days': working_days,
-            'ot_hours': ot_hours,
-            'base_pay': base_pay,
-            'ot_pay': ot_pay,
-            'total_salary': total,
-            # OT is paid for daily-rate months only (the month's frozen pay model).
-            'paid_ot': base > 0 and not bool(rec.monthly_salaried),
-        })
-
-    # Attendance feeds the day grid and the project / daily breakdowns.
-    att_query = Attendance.query
+    # Attendance in range, scoped to the chosen project / labour. This is the
+    # single source the whole workbook is built from.
+    att_query = Attendance.query.filter(
+        Attendance.date >= start_date,
+        Attendance.date <= end_date,
+    )
     if project:
         att_query = att_query.filter(Attendance.project == project)
-    att_records = att_query.all()
+    if worker_id_str.isdigit():
+        att_query = att_query.filter(Attendance.worker_id == int(worker_id_str))
+    att_records = att_query.order_by(Attendance.date, Attendance.worker_id).all()
+
+    # Worker identity (name / designation / rate / pay model) from the master.
+    worker_ids = sorted({a.worker_id for a in att_records})
+    winfo = {}
+    if worker_ids:
+        for w in Worker.query.filter(Worker.id.in_(worker_ids)).all():
+            winfo[w.id] = {
+                'name': w.name,
+                'designation': w.designation or '',
+                'rate': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
+                'monthly_salaried': bool(w.monthly_salaried),
+            }
+
+    # Frozen per-month basis: each day is priced at the rate AND pay model in
+    # force that month, so editing a worker's pay never rewrites the past.
+    snapshot_basis = {}
+    if worker_ids:
+        for s in Salary.query.filter(Salary.worker_id.in_(worker_ids)).all():
+            base = float(s.base_salary_per_day) if s.base_salary_per_day else 0
+            snapshot_basis[(s.worker_id, s.year, s.month)] = (base, bool(s.monthly_salaried))
+
+    def basis_for(a):
+        """(rate, monthly_salaried) for one record's month — snapshot, else master."""
+        key = (a.worker_id, a.date.year, a.date.month)
+        if key in snapshot_basis:
+            return snapshot_basis[key]
+        info = winfo.get(a.worker_id, {})
+        return info.get('rate', 0), info.get('monthly_salaried', False)
+
+    def label(wid):
+        """Worker as 'NAME(ROLE)' — role rides with the name, never a stray column."""
+        info = winfo.get(wid, {})
+        name = info.get('name', f'Worker {wid}')
+        desig = info.get('designation', '')
+        return f"{name}({desig.upper()})" if desig else name
+
+    # --- Aggregate per worker (the complete picture) ---
+    workers = {}
+    for a in att_records:
+        rate, monthly = basis_for(a)
+        ot = float(a.ot_hours) if a.ot_hours else 0
+        w = workers.setdefault(a.worker_id, {
+            'present': 0, 'absent': 0, 'holiday': 0, 'ot': 0.0,
+            'base_pay': 0.0, 'ot_pay': 0.0, 'rates': set(), 'monthly': monthly,
+        })
+        w['monthly'] = monthly  # pay model is stable per worker within a period
+        if rate > 0:
+            w['rates'].add(rate)
+        if a.status == 'P':
+            w['present'] += 1
+            w['base_pay'] += rate
+        elif a.status == 'A':
+            w['absent'] += 1
+        elif a.status == 'H':
+            w['holiday'] += 1
+        w['ot'] += ot
+        # OT pay accrues wherever OT was logged (daily-rate only), matching the
+        # monthly snapshot and the dashboard summary.
+        if not monthly and rate > 0:
+            w['ot_pay'] += (rate / 8) * ot
+
+    # --- Aggregate per day and per project ---
+    daily = {}
+    projects = {}
+    for a in att_records:
+        rate, monthly = basis_for(a)
+        ot = float(a.ot_hours) if a.ot_hours else 0
+        ds = daily.setdefault(a.date, {'present': 0, 'absent': 0, 'holiday': 0, 'ot': 0.0})
+        if a.status == 'P':
+            ds['present'] += 1
+        elif a.status == 'A':
+            ds['absent'] += 1
+        elif a.status == 'H':
+            ds['holiday'] += 1
+        ds['ot'] += ot
+        if a.status == 'P':  # project breakdown is present-only, like the dashboard
+            proj = a.project or 'Unassigned'
+            ps = projects.setdefault(proj, {'wids': set(), 'days': set(),
+                                            'ot': 0.0, 'cost': 0.0})
+            ps['wids'].add(a.worker_id)
+            ps['days'].add(a.date)
+            ps['ot'] += ot
+            day_ot_pay = (rate / 8) * ot if (not monthly and rate > 0) else 0
+            ps['cost'] += rate + day_ot_pay
+
+    # --- Period / filter banner shared by every sheet ---
+    period_text = f"Period: {start_date.strftime('%d %b %Y')} – {end_date.strftime('%d %b %Y')}"
+    filt = []
+    if project:
+        filt.append(f"Project: {project}")
+    if worker_id_str.isdigit():
+        filt.append(f"Labour: {label(int(worker_id_str))}")
+    filter_text = "   |   ".join(filt) if filt else "All projects & labours"
 
     wb = Workbook()
     wb.remove(wb.active)  # drop the default empty sheet
 
-    for (year, month) in sorted(months.keys(), reverse=True):
-        month_abbr = calendar.month_name[month][:3].upper()
-        year_short = str(year)[-2:]
-        sheet_name = f"{month_abbr}-{year_short}"
-        days_in_month = calendar.monthrange(year, month)[1]
-
-        # Attendance for this month -> worker_id -> day -> cell.
-        attendance_map = {}
-        month_att = []
-        for a in att_records:
-            if a.date.year != year or a.date.month != month:
-                continue
-            month_att.append(a)
-            attendance_map.setdefault(a.worker_id, {})[a.date.day] = {
-                'status': a.status,
-                'ot': float(a.ot_hours) if a.ot_hours else '',
-                'project': a.project or '',
-                'work': a.work or '',
-            }
-
-        # When a project is selected, only workers who actually worked it appear.
-        if project:
-            month_workers = [w for w in months[(year, month)]
-                             if w['worker_id'] in attendance_map]
-        else:
-            month_workers = months[(year, month)]
-        if not month_workers:
-            continue
-
-        # --- Header rows ---
-        title_row = [f"LABOUR ATTENDANCE FOR {sheet_name}"]
-        # The fixed designation rides in the Name column ("NAME - DESIGNATION")
-        # rather than being repeated per day.
-        header_row1 = ['S. No', 'Name']
-        header_row2 = ['', '']
-        for day in range(1, days_in_month + 1):
-            is_sunday = calendar.weekday(year, month, day) == 6  # Mon=0..Sun=6
-            header_row1 += [f"{day} SUNDAY" if is_sunday else day, '', '', '']
-            header_row2 += ['', 'OT', 'Pr', 'Work']
-        header_row1 += [f"{sheet_name} MONTH LABOUR ATTENDANCE & PAYMENT", '', '', '', '', '']
-        header_row2 += ['TOTAL PRESENT', 'TOTAL OT', 'BASE SALARY', 'BASE PAY', 'OT PAY', 'TOTAL SALARY']
-
-        # --- Worker data rows ---
-        data_rows = []
-        for s_no, w in enumerate(month_workers, start=1):
-            name_with_role = f"{w['name']} - {w['designation']}" if w['designation'] else w['name']
-            row = [s_no, name_with_role]
-            for day in range(1, days_in_month + 1):
-                cell = attendance_map.get(w['worker_id'], {}).get(day)
-                if cell:
-                    row += [cell['status'], cell['ot'] or '', cell['project'], cell['work']]
-                else:
-                    row += ['', '', '', '']
-            row += [w['working_days'], w['ot_hours'], w['base_salary_per_day'],
-                    w['base_pay'], w['ot_pay'], w['total_salary']]
-            data_rows.append(row)
-
-        # --- Monthly summary ---
-        total_workers = len(month_workers)
-        total_present = sum(w['working_days'] for w in month_workers)
-        total_ot = round(sum(w['ot_hours'] for w in month_workers), 2)
-        total_salary_amt = round(sum(w['total_salary'] for w in month_workers), 2)
-
-        # --- Project breakdown (present-only). Labor cost uses the month's frozen
-        # rate and its frozen OT decision: OT is added only for workers whose
-        # snapshot shows OT was paid that month (daily-rate). ---
-        rate_by_id = {w['worker_id']: w['base_salary_per_day'] for w in month_workers}
-        paid_ot_by_id = {w['worker_id']: w['paid_ot'] for w in month_workers}
-        project_stats = {}
-        for a in month_att:
-            if a.status != 'P':
-                continue
-            proj = a.project or 'Unassigned'
-            ps = project_stats.setdefault(proj, {
-                'worker_ids': set(), 'present_dates': set(),
-                'ot_hours': 0.0, 'labor_cost': 0.0,
-            })
-            ps['worker_ids'].add(a.worker_id)
-            ps['present_dates'].add(a.date)
-            rate = rate_by_id.get(a.worker_id, 0)
-            ot = float(a.ot_hours) if a.ot_hours else 0
-            day_ot_pay = (rate / 8) * ot if paid_ot_by_id.get(a.worker_id) else 0
-            ps['labor_cost'] += rate + day_ot_pay
-            ps['ot_hours'] += ot
-
-        # --- Daily headcount (OT across all statuses, matching the dashboard) ---
-        daily_stats = {}
-        for a in month_att:
-            ds = daily_stats.setdefault(a.date.day, {
-                'present': 0, 'absent': 0, 'holiday': 0, 'ot_hours': 0.0,
-            })
-            if a.status == 'P':
-                ds['present'] += 1
-            elif a.status == 'A':
-                ds['absent'] += 1
-            elif a.status == 'H':
-                ds['holiday'] += 1
-            ds['ot_hours'] += float(a.ot_hours) if a.ot_hours else 0
-
-        # --- Assemble summary rows ---
-        summary_rows = [
-            [],
-            ['MONTHLY SUMMARY'],
-            ['Total Workers', total_workers, '', 'Total Present Days', total_present,
-             '', 'Total OT Hours', total_ot, '', 'Total Salary', total_salary_amt],
-            [],
-            ['PROJECT BREAKDOWN'],
-            ['Project', 'Workers', 'Working Days', 'OT Hours', 'Labor Cost'],
-        ]
-        for proj, stats in sorted(project_stats.items()):
-            summary_rows.append([
-                proj, len(stats['worker_ids']), len(stats['present_dates']),
-                round(stats['ot_hours'], 2), round(stats['labor_cost'], 2),
-            ])
-        summary_rows += [[], ['DAILY HEADCOUNT'],
-                         ['Day', 'Date', 'Present', 'Absent', 'Holiday', 'OT Hours']]
-        for day in range(1, days_in_month + 1):
-            ds = daily_stats.get(day)
-            if not ds:
-                continue
-            day_name = calendar.day_abbr[calendar.weekday(year, month, day)]
-            summary_rows.append([
-                day_name, f"{day}/{month}/{year}",
-                ds['present'], ds['absent'], ds['holiday'], round(ds['ot_hours'], 2),
-            ])
-
-        # --- Write the sheet ---
-        ws = wb.create_sheet(title=sheet_name)
-        for row in [title_row, header_row1, header_row2, *data_rows, *summary_rows]:
-            ws.append(row)
-
-        widths = [5, 28]
-        for _ in range(days_in_month):
-            widths += [3, 3, 8, 10]
-        widths += [13, 10, 12, 10, 10, 12]
-        for idx, width in enumerate(widths, start=1):
-            ws.column_dimensions[get_column_letter(idx)].width = width
-        ws.merge_cells('A1:B1')
-
-    # openpyxl cannot save a workbook with zero sheets.
-    if not wb.sheetnames:
-        wb.create_sheet(title='No Data')
+    if not att_records:
+        ws = wb.create_sheet(title='No Data')
+        ws['A1'] = 'No attendance found for the selected filters.'
+        ws['A1'].font = _TITLE_FONT
+        ws['A2'] = period_text
+        ws['A3'] = filter_text
+        ws['A2'].font = ws['A3'].font = _SUB_FONT
+    else:
+        _build_worker_summary(wb, workers, label, period_text, filter_text)
+        _build_daily_attendance(wb, att_records, label, period_text, filter_text)
+        _build_daily_project_summary(wb, daily, projects, period_text, filter_text)
 
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
 
-    suffix = f"_{project.replace(' ', '_')}" if project else ''
-    filename = f"salary_report{suffix}_{ist_now().date().isoformat()}.xlsx"
+    parts = ['salary_report', start_date.isoformat(), 'to', end_date.isoformat()]
+    if project:
+        parts.append(project.replace(' ', '_'))
+    filename = f"{'_'.join(parts)}.xlsx"
     return send_file(
         buffer,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
         download_name=filename,
     )
+
+
+def _write_banner(ws, title, period_text, filter_text, ncols):
+    """Title + period + filter rows merged across the sheet; returns next row."""
+    ws.cell(row=1, column=1, value=title).font = _TITLE_FONT
+    ws.cell(row=2, column=1, value=period_text).font = _SUB_FONT
+    ws.cell(row=3, column=1, value=filter_text).font = _SUB_FONT
+    last_col = get_column_letter(ncols)
+    for r in (1, 2, 3):
+        ws.merge_cells(f'A{r}:{last_col}{r}')
+    return 5  # leave row 4 blank, data/header starts at row 5
+
+
+def _style_header(ws, row_idx, ncols):
+    for c in range(1, ncols + 1):
+        cell = ws.cell(row=row_idx, column=c)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = _CENTER
+        cell.border = _BORDER
+
+
+def _build_worker_summary(wb, workers, label, period_text, filter_text):
+    """Sheet 1 — the complete per-worker picture, colour-highlighted."""
+    ws = wb.create_sheet(title='Worker Summary')
+    headers = ['S.No', 'Worker', 'Pay Type', 'Day Rate', 'Present', 'Absent',
+               'OT Hrs', 'Base Pay', 'OT Pay', 'Total Salary']
+    row = _write_banner(ws, 'WORKER SALARY SUMMARY', period_text, filter_text, len(headers))
+
+    header_row = row
+    for c, h in enumerate(headers, start=1):
+        ws.cell(row=row, column=c, value=h)
+    _style_header(ws, header_row, len(headers))
+    row += 1
+
+    money_cols = {4, 8, 9, 10}  # Day Rate, Base Pay, OT Pay, Total Salary
+    tot_present = tot_absent = 0
+    tot_ot = tot_base = tot_otpay = tot_total = 0.0
+
+    for s_no, wid in enumerate(sorted(workers, key=lambda i: label(i)), start=1):
+        w = workers[wid]
+        base_pay = round(w['base_pay'], 2)
+        ot_pay = round(w['ot_pay'], 2)
+        total = round(base_pay + ot_pay, 2)
+        rates = w['rates']
+        rate_val = rates.pop() if len(rates) == 1 else (0 if not rates else None)
+        pay_type = 'Monthly' if w['monthly'] else 'Daily'
+
+        values = [
+            s_no, label(wid), pay_type,
+            (rate_val if rate_val is not None else 'varies'),
+            w['present'], w['absent'], round(w['ot'], 2),
+            base_pay, ot_pay, total,
+        ]
+        for c, v in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=c, value=v)
+            cell.border = _BORDER
+            cell.alignment = _LEFT if c == 2 else _CENTER
+            if c in money_cols and isinstance(v, (int, float)):
+                cell.number_format = _MONEY_FMT
+            if row % 2 == 0:
+                cell.fill = _BAND_FILL
+        # Pay-type cell: blue for monthly, green for daily-rate.
+        pt = ws.cell(row=row, column=3)
+        pt.fill = _MONTHLY_FILL if w['monthly'] else _DAILY_FILL
+        pt.font = Font(bold=True)
+        # Total salary stands out.
+        tcell = ws.cell(row=row, column=10)
+        tcell.fill = _MONEY_FILL
+        tcell.font = Font(bold=True)
+
+        tot_present += w['present']
+        tot_absent += w['absent']
+        tot_ot += w['ot']
+        tot_base += base_pay
+        tot_otpay += ot_pay
+        tot_total += total
+        row += 1
+
+    # Totals band
+    totals = ['', 'TOTAL', '', '', tot_present, tot_absent, round(tot_ot, 2),
+              round(tot_base, 2), round(tot_otpay, 2), round(tot_total, 2)]
+    for c, v in enumerate(totals, start=1):
+        cell = ws.cell(row=row, column=c, value=v)
+        cell.fill = _TOTAL_FILL
+        cell.font = _TOTAL_FONT
+        cell.border = _BORDER
+        cell.alignment = _LEFT if c == 2 else _CENTER
+        if c in money_cols and isinstance(v, (int, float)):
+            cell.number_format = _MONEY_FMT
+
+    widths = [6, 30, 10, 11, 9, 9, 9, 12, 11, 14]
+    for idx, wd in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(idx)].width = wd
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+
+
+def _build_daily_attendance(wb, att_records, label, period_text, filter_text):
+    """Sheet 2 — one row per worker per day; status colour-coded."""
+    ws = wb.create_sheet(title='Daily Attendance')
+    headers = ['Date', 'Day', 'Worker', 'Status', 'OT Hrs', 'Project', 'Work']
+    row = _write_banner(ws, 'DAILY ATTENDANCE DETAIL', period_text, filter_text, len(headers))
+
+    header_row = row
+    for c, h in enumerate(headers, start=1):
+        ws.cell(row=row, column=c, value=h)
+    _style_header(ws, header_row, len(headers))
+    row += 1
+
+    # Sorted by date, then worker label (att_records already date-ordered).
+    ordered = sorted(att_records, key=lambda a: (a.date, label(a.worker_id)))
+    for a in ordered:
+        day_name = calendar.day_abbr[a.date.weekday()]
+        ot = float(a.ot_hours) if a.ot_hours else 0
+        values = [
+            a.date.strftime('%d/%m/%Y'), day_name, label(a.worker_id),
+            a.status or '', (ot if ot else ''), a.project or '-', a.work or '-',
+        ]
+        for c, v in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=c, value=v)
+            cell.border = _BORDER
+            cell.alignment = _LEFT if c in (3, 6, 7) else _CENTER
+            if row % 2 == 0:
+                cell.fill = _BAND_FILL
+        # Colour-code the status cell.
+        scell = ws.cell(row=row, column=4)
+        style = _STATUS_STYLE.get(a.status)
+        if style:
+            scell.fill, scell.font = style
+        scell.alignment = _CENTER
+        row += 1
+
+    widths = [12, 6, 30, 8, 8, 26, 18]
+    for idx, wd in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(idx)].width = wd
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+
+
+def _build_daily_project_summary(wb, daily, projects, period_text, filter_text):
+    """Sheet 3 — daily headcount and per-project labour cost."""
+    ws = wb.create_sheet(title='Daily & Project')
+    row = _write_banner(ws, 'DAILY & PROJECT SUMMARY', period_text, filter_text, 6)
+
+    # --- Daily headcount section ---
+    ws.cell(row=row, column=1, value='DAILY HEADCOUNT')
+    for c in range(1, 7):
+        ws.cell(row=row, column=c).fill = _SECTION_FILL
+        ws.cell(row=row, column=c).font = _SECTION_FONT
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+    row += 1
+
+    day_headers = ['Date', 'Day', 'Present', 'Absent', 'Holiday', 'OT Hrs']
+    for c, h in enumerate(day_headers, start=1):
+        ws.cell(row=row, column=c, value=h)
+    _style_header(ws, row, 6)
+    row += 1
+
+    for d in sorted(daily):
+        ds = daily[d]
+        values = [d.strftime('%d/%m/%Y'), calendar.day_abbr[d.weekday()],
+                  ds['present'], ds['absent'], ds['holiday'], round(ds['ot'], 2)]
+        for c, v in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=c, value=v)
+            cell.border = _BORDER
+            cell.alignment = _CENTER
+            if row % 2 == 0:
+                cell.fill = _BAND_FILL
+        row += 1
+
+    row += 1  # gap between sections
+
+    # --- Project breakdown section ---
+    ws.cell(row=row, column=1, value='PROJECT BREAKDOWN')
+    for c in range(1, 7):
+        ws.cell(row=row, column=c).fill = _SECTION_FILL
+        ws.cell(row=row, column=c).font = _SECTION_FONT
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+    row += 1
+
+    proj_headers = ['Project', 'Workers', 'Working Days', 'OT Hrs', 'Labour Cost', '']
+    for c, h in enumerate(proj_headers, start=1):
+        ws.cell(row=row, column=c, value=h)
+    _style_header(ws, row, 6)
+    row += 1
+
+    for proj in sorted(projects):
+        ps = projects[proj]
+        values = [proj, len(ps['wids']), len(ps['days']),
+                  round(ps['ot'], 2), round(ps['cost'], 2), '']
+        for c, v in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=c, value=v)
+            cell.border = _BORDER
+            cell.alignment = _LEFT if c == 1 else _CENTER
+            if c == 5 and isinstance(v, (int, float)):
+                cell.number_format = _MONEY_FMT
+                cell.fill = _MONEY_FILL
+            elif row % 2 == 0:
+                cell.fill = _BAND_FILL
+        row += 1
+
+    widths = [30, 11, 14, 10, 14, 4]
+    for idx, wd in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(idx)].width = wd

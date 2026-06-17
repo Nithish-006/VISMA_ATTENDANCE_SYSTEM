@@ -384,12 +384,20 @@ async function exportExcel() {
     `;
 
     try {
-        // Scope the report to the selected project, if any (server applies it).
+        // Scope the report to exactly the filters on screen — date range,
+        // project and labour — so the workbook matches the dashboard and never
+        // dumps every month. The server applies all of them.
+        const startDate = document.getElementById('salaryStartDate')?.value || '';
+        const endDate = document.getElementById('salaryEndDate')?.value || '';
         const selectedProject = document.getElementById('salaryProject')?.value || '';
-        let exportUrl = '/api/salary/export';
-        if (selectedProject) {
-            exportUrl += `?project=${encodeURIComponent(selectedProject)}`;
-        }
+        const selectedWorker = document.getElementById('salaryWorker')?.value || '';
+
+        const params = new URLSearchParams();
+        if (startDate) params.set('start_date', startDate);
+        if (endDate) params.set('end_date', endDate);
+        if (selectedProject) params.set('project', selectedProject);
+        if (selectedWorker) params.set('worker_id', selectedWorker);
+        const exportUrl = `/api/salary/export?${params.toString()}`;
 
         const response = await fetch(exportUrl);
         if (!response.ok) throw new Error(`Export failed: ${response.status}`);
@@ -397,8 +405,9 @@ async function exportExcel() {
         // Prefer the server-supplied filename, fall back to a sensible default.
         const disposition = response.headers.get('Content-Disposition') || '';
         const match = disposition.match(/filename="?([^"]+)"?/);
+        const rangeSuffix = startDate && endDate ? `_${startDate}_to_${endDate}` : `_${isoDate(istToday())}`;
         const projectSuffix = selectedProject ? `_${selectedProject.replace(/\s+/g, '_')}` : '';
-        const fileName = match ? match[1] : `salary_report${projectSuffix}_${isoDate(istToday())}.xlsx`;
+        const fileName = match ? match[1] : `salary_report${rangeSuffix}${projectSuffix}.xlsx`;
 
         // Stream the .xlsx bytes to a download.
         const blob = await response.blob();
