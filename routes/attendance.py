@@ -343,6 +343,11 @@ def _recalculate_monthly_salaries(affected_periods):
             salary.total_working_days = working_days
             salary.ot_hours = ot_hours
             salary.monthly_salaried = bool(worker_info.monthly_salaried)
+            # Keep the snapshot's rate in lock-step with the total we recompute
+            # from it. Without this the rate column goes stale (a row created
+            # before the worker's rate was set keeps base 0 even as its total is
+            # recomputed correctly), which made the report price days at 0.
+            salary.base_salary_per_day = worker_info.base_salary_per_day
             salary.total_salary = total
         else:
             salary = Salary(
@@ -484,32 +489,35 @@ def get_attendance_summary():
                 'monthly_salaried': bool(w.monthly_salaried)
             }
 
-    # Frozen per-month pay basis, keyed by (worker_id, year, month). Each day is
-    # priced at the rate AND pay model that were actually in force that month
-    # (the monthly snapshot), NOT the worker's current master values — so
-    # changing a worker's pay never rewrites what a past month cost. OT is paid
-    # only for daily-rate months (monthly_salaried = False) with a positive rate.
-    snapshot_basis = {}
+    # Per-month rate: the base pay/day that applied in each month is stored on
+    # that month's salary row, so a worker raised mid-life keeps the old rate on
+    # earlier months. Keyed by (worker_id, year, month) -> (base, monthly).
+    month_rate = {}
     if worker_ids:
         for s in Salary.query.filter(Salary.worker_id.in_(worker_ids)).all():
             base = float(s.base_salary_per_day) if s.base_salary_per_day else 0
-            paid_ot = base > 0 and not bool(s.monthly_salaried)
-            snapshot_basis[(s.worker_id, s.year, s.month)] = (base, paid_ot)
+            month_rate[(s.worker_id, s.year, s.month)] = (base, bool(s.monthly_salaried))
 
     def day_pay_for(record, ot_hours):
-        """(rate, ot_pay) for one present day, using that month's frozen basis.
+        """(rate, ot_pay) for one present day, using that month's stored rate.
 
-        Falls back to the live master rate only when a month has no snapshot yet
-        (e.g. brand-new data) — for which a daily-rate worker is paid OT and a
-        monthly-salaried one is not, matching compute_pay.
+        Look up the base pay/day saved for the record's own month and use it, so a
+        worker raised mid-life keeps the old rate on earlier months. If a month's
+        stored rate is missing/0, fall back to the worker's current master rate.
+        OT is paid at the hourly rate (day rate / 8) for daily-rate workers only.
+        This keeps the dashboard identical to the exported report.
         """
+        winfo = worker_info_map.get(record.worker_id, {})
+        master_rate = winfo.get('base_salary_per_day', 0)
         key = (record.worker_id, record.date.year, record.date.month)
-        if key in snapshot_basis:
-            rate, paid_ot = snapshot_basis[key]
+        if key in month_rate:
+            rate, monthly = month_rate[key]
+            if rate <= 0:
+                rate = master_rate
         else:
-            winfo = worker_info_map.get(record.worker_id, {})
-            rate = winfo.get('base_salary_per_day', 0)
-            paid_ot = rate > 0 and not winfo.get('monthly_salaried', False)
+            rate = master_rate
+            monthly = winfo.get('monthly_salaried', False)
+        paid_ot = rate > 0 and not monthly
         ot_pay = (rate / 8) * ot_hours if paid_ot else 0
         return rate, ot_pay
 
@@ -532,9 +540,9 @@ def get_attendance_summary():
         proj = r.project or 'Unassigned'
         date_str = r.date.isoformat()
 
-        # Price this record at its month's frozen basis. base_rate is earned only
-        # on present days; ot_pay applies to any day that logged overtime (the
-        # monthly snapshot counts OT regardless of status, so we match it).
+        # Price this record live from the worker's Base Pay/Day. base rate is
+        # earned on present days; ot_pay applies to any day that logged overtime
+        # (daily-rate workers only).
         rate, ot_pay = day_pay_for(r, ot)
 
         # Project aggregation - only include present workers
@@ -544,8 +552,8 @@ def get_attendance_summary():
             project_data[proj]['worker_ids'].add(r.worker_id)
             project_data[proj]['present_dates'].add(r.date)
             project_data[proj]['ot_hours'] += ot
-            # Labor cost for this present-day: that month's frozen day-rate plus
-            # overtime, priced exactly as the salary report does.
+            # Labor cost for this present-day: the day-rate plus overtime,
+            # priced exactly as the salary report does.
             project_data[proj]['labor_cost'] += rate + ot_pay
             # Track this worker as present
             present_workers.add(r.worker_id)
@@ -583,7 +591,7 @@ def get_attendance_summary():
         elif r.status == 'A':
             worker_data[r.worker_id]['absent_days'] += 1
         worker_data[r.worker_id]['ot_hours'] += ot
-        # OT pay accrues wherever OT was logged, matching the monthly snapshot.
+        # OT pay accrues wherever OT was logged (daily-rate workers only).
         worker_data[r.worker_id]['salary'] += ot_pay
         if r.project:
             worker_data[r.worker_id]['projects'].add(r.project)
@@ -621,7 +629,7 @@ def get_attendance_summary():
     workers_list = []
     total_salary = 0.0
     for wid, data in sorted(worker_data.items(), key=lambda x: x[1]['name']):
-        # Salary was accumulated per present-day at each month's frozen rate.
+        # Salary was accumulated per present-day at the worker's Base Pay/Day.
         salary = round(data['salary'], 2)
         total_salary += salary
         workers_list.append({

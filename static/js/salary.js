@@ -32,6 +32,12 @@ function isoDate(d) {
     return `${y}-${m}-${day}`;
 }
 
+// True when both YYYY-MM-DD strings fall in the same calendar month — salary is
+// computed per month, so the dashboard/export only accept a single-month range.
+function sameMonth(startStr, endStr) {
+    return startStr.slice(0, 7) === endStr.slice(0, 7);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     loadSalaryData();
     document.getElementById('exportBtn').addEventListener('click', exportExcel);
@@ -198,6 +204,13 @@ async function loadSalarySummary() {
 
     if (!startDate || !endDate) {
         dashboard.innerHTML = '<div class="empty-state">Please select both start and end dates.</div>';
+        return;
+    }
+
+    // Salary is reckoned one month at a time (each month has its own base
+    // pay/day), so a range that straddles two months is ambiguous — block it.
+    if (!sameMonth(startDate, endDate)) {
+        dashboard.innerHTML = '<div class="empty-state">Please pick a date range within a single month — salary is calculated per month.</div>';
         return;
     }
 
@@ -371,6 +384,15 @@ function formatCurrency(amount) {
 async function exportExcel() {
     if (!salaryData || salaryData.length === 0) {
         alert('No data to export');
+        return;
+    }
+
+    // Match the dashboard: only a single-month range is allowed, since salary is
+    // calculated per month.
+    const exStart = document.getElementById('salaryStartDate')?.value || '';
+    const exEnd = document.getElementById('salaryEndDate')?.value || '';
+    if (exStart && exEnd && !sameMonth(exStart, exEnd)) {
+        alert('Please pick a date range within a single month — salary is calculated per month.');
         return;
     }
 

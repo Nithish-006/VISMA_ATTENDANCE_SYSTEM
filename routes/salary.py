@@ -233,6 +233,8 @@ _MONEY_FILL = PatternFill('solid', fgColor='FEF9C3')    # pale yellow money colu
 _MONTHLY_FILL = PatternFill('solid', fgColor='DBEAFE')  # blue  = monthly-salaried
 _DAILY_FILL = PatternFill('solid', fgColor='DCFCE7')    # green = daily-rate
 _BAND_FILL = PatternFill('solid', fgColor='F9FAFB')     # zebra striping
+_WARN_FILL = PatternFill('solid', fgColor='FECACA')     # red = needs attention (no rate set)
+_WARN_FONT = Font(bold=True, color='991B1B')
 _STATUS_STYLE = {  # (fill, font) per attendance status
     'P': (PatternFill('solid', fgColor='D1FAE5'), Font(bold=True, color='065F46')),
     'A': (PatternFill('solid', fgColor='FEE2E2'), Font(bold=True, color='991B1B')),
@@ -250,11 +252,11 @@ def export_salary_report():
     """Build a clean, filter-scoped salary + attendance report (.xlsx).
 
     The workbook honours exactly the filters chosen on the salary dashboard —
-    the From/To date range, the project, and the labour — so it never dumps
-    every month the way the old report did. Every pay figure is priced through
-    the same frozen monthly-snapshot basis the dashboard uses (present-day x
-    that month's rate; OT paid for daily-rate workers only), so the report can
-    never drift from what is shown on screen.
+    the (single-month) date range, the project, and the labour — so it never
+    dumps every month the way the old report did. Pay is computed from the base
+    pay/day stored for each month: salary = present days x that month's rate,
+    plus OT (day rate / 8 per hour) for daily-rate workers and no OT for
+    monthly-salaried workers.
 
     Three sheets:
       1. Worker Summary    - the complete per-worker picture (pay type, day
@@ -304,21 +306,31 @@ def export_salary_report():
                 'monthly_salaried': bool(w.monthly_salaried),
             }
 
-    # Frozen per-month basis: each day is priced at the rate AND pay model in
-    # force that month, so editing a worker's pay never rewrites the past.
-    snapshot_basis = {}
+    # Per-month rate: the base pay/day that applied in each month is stored on
+    # that month's salary row, so a worker raised mid-life keeps the old rate on
+    # earlier months. Keyed by (worker_id, year, month) -> (base, monthly).
+    month_rate = {}
     if worker_ids:
         for s in Salary.query.filter(Salary.worker_id.in_(worker_ids)).all():
             base = float(s.base_salary_per_day) if s.base_salary_per_day else 0
-            snapshot_basis[(s.worker_id, s.year, s.month)] = (base, bool(s.monthly_salaried))
+            month_rate[(s.worker_id, s.year, s.month)] = (base, bool(s.monthly_salaried))
 
     def basis_for(a):
-        """(rate, monthly_salaried) for one record's month — snapshot, else master."""
-        key = (a.worker_id, a.date.year, a.date.month)
-        if key in snapshot_basis:
-            return snapshot_basis[key]
+        """(rate, monthly_salaried) for one record — that month's stored rate.
+
+        Look up the base pay/day saved for the record's own month and use it, so
+        the salary is present days x that month's rate (+ OT for daily, none for
+        monthly). If a month's stored rate is missing/0, fall back to the worker's
+        current master rate (a genuinely rate-less worker like SATHISH stays 0 and
+        is flagged 'Rate not set').
+        """
         info = winfo.get(a.worker_id, {})
-        return info.get('rate', 0), info.get('monthly_salaried', False)
+        master_rate = info.get('rate', 0)
+        key = (a.worker_id, a.date.year, a.date.month)
+        if key in month_rate:
+            rate, monthly = month_rate[key]
+            return (rate if rate > 0 else master_rate), monthly
+        return master_rate, info.get('monthly_salaried', False)
 
     def label(wid):
         """Worker as 'NAME(ROLE)' — role rides with the name, never a stray column."""
@@ -347,8 +359,7 @@ def export_salary_report():
         elif a.status == 'H':
             w['holiday'] += 1
         w['ot'] += ot
-        # OT pay accrues wherever OT was logged (daily-rate only), matching the
-        # monthly snapshot and the dashboard summary.
+        # OT is paid only to daily-rate workers, at the hourly rate (day rate / 8).
         if not monthly and rate > 0:
             w['ot_pay'] += (rate / 8) * ot
 
@@ -458,13 +469,21 @@ def _build_worker_summary(wb, workers, label, period_text, filter_text):
         base_pay = round(w['base_pay'], 2)
         ot_pay = round(w['ot_pay'], 2)
         total = round(base_pay + ot_pay, 2)
-        rates = w['rates']
-        rate_val = rates.pop() if len(rates) == 1 else (0 if not rates else None)
+        rates = {r for r in w['rates'] if r > 0}
+        # No positive rate ever seen for this worker in the period means their
+        # Base Pay/Day was never entered — so days x 0 = 0. Flag it loudly rather
+        # than letting a real-looking zero salary slip through unnoticed.
+        rate_missing = not rates
+        if rate_missing:
+            rate_display = 'Rate not set'
+        elif len(rates) == 1:
+            rate_display = next(iter(rates))
+        else:
+            rate_display = 'varies'
         pay_type = 'Monthly' if w['monthly'] else 'Daily'
 
         values = [
-            s_no, label(wid), pay_type,
-            (rate_val if rate_val is not None else 'varies'),
+            s_no, label(wid), pay_type, rate_display,
             w['present'], w['absent'], round(w['ot'], 2),
             base_pay, ot_pay, total,
         ]
@@ -484,6 +503,13 @@ def _build_worker_summary(wb, workers, label, period_text, filter_text):
         tcell = ws.cell(row=row, column=10)
         tcell.fill = _MONEY_FILL
         tcell.font = Font(bold=True)
+        # Missing-rate rows: flag the rate AND the (meaningless) totals in red so
+        # the viewer reads "fix the rate", not "this person earned nothing".
+        if rate_missing:
+            for c in (4, 8, 10):
+                wc = ws.cell(row=row, column=c)
+                wc.fill = _WARN_FILL
+                wc.font = _WARN_FONT
 
         tot_present += w['present']
         tot_absent += w['absent']
