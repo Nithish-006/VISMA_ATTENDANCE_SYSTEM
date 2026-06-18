@@ -3885,3 +3885,29 @@ select.edit-input {
         gap: 12px;
     }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   CARRY-OVER (kept by request) — only two things from the redesign:
+   (1) IBM Plex type   (2) sharp-edged, small-radius components.
+   Everything else is the original bright UI.
+   ════════════════════════════════════════════════════════════════ */
+:root {
+    --font-sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --font-mono:'IBM Plex Mono','SF Mono',Monaco,monospace;
+
+    /* sharp edges */
+    --radius-sm:4px;
+    --radius-md:5px;
+    --radius-lg:6px;
+    --radius-xl:8px;
+    --radius-2xl:10px;
+}
+
+/* Square the hard-coded rounded pieces (landing cards + pills/toggles) */
+.module-card, .brand-logo { border-radius: var(--radius-lg); }
+.module-icon-wrap, .module-arrow { border-radius: var(--radius-sm); }
+.filter-pill, .quick-filter-pill, .quick-date-picker, .day-chip, .period-chip,
+.dss-item, .pwc-pill, .status-pill, .mr-project, .absent-name, .team-badge,
+.status-badge, .month-total, .summary-mode-toggle, .summary-mode-btn,
+.pay-type-toggle, .pay-type-opt, .mark-day-toggle, .tab-switcher, .tab-btn,
+.progress-counter { border-radius: var(--radius-sm); }
