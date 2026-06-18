@@ -3,43 +3,49 @@
    Clean Modern Design - Fast & Minimal
    ============================================ */
 
-/* CSS Variables */
+/* ============================================
+   CLAUDE THEME — Anthropic palette
+   Warm ivory surfaces · Claude coral accent · slate ink.
+   Only color + type are re-skinned; structure & radii stay original.
+   ============================================ */
 :root {
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8fafc;
-    --bg-tertiary: #f1f5f9;
-    --bg-glass: rgba(255, 255, 255, 0.95);
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-tertiary: #94a3b8;
-    --border-light: #e2e8f0;
-    --border-medium: #cbd5e1;
-    --accent: #6366f1;
-    --accent-hover: #4f46e5;
-    --accent-light: #eef2ff;
-    --accent-glow: rgba(99, 102, 241, 0.15);
-    --success: #10b981;
-    --success-light: #ecfdf5;
-    --success-bg: #d1fae5;
-    --success-glow: rgba(16, 185, 129, 0.15);
-    --danger: #ef4444;
-    --danger-light: #fef2f2;
-    --danger-bg: #fee2e2;
-    --danger-glow: rgba(239, 68, 68, 0.15);
-    --warning: #f59e0b;
-    --warning-light: #fffbeb;
-    --warning-bg: #fef3c7;
-    --warning-glow: rgba(245, 158, 11, 0.15);
-    --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --gradient-accent: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    --gradient-success: linear-gradient(135deg, #10b981 0%, #34d399 100%);
-    --gradient-warm: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
-    --gradient-subtle: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-    --gradient-card: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05);
-    --shadow-lg: 0 10px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.05);
-    --shadow-xl: 0 20px 40px -10px rgb(0 0 0 / 0.15);
+    --bg-primary: #FCFBF8;       /* cards — warm white */
+    --bg-secondary: #F0EEE6;     /* page — Anthropic ivory/cloud */
+    --bg-tertiary: #E9E6DA;      /* sunken / hover */
+    --bg-glass: rgba(240, 238, 230, 0.92);
+    --text-primary: #1F1E1B;     /* slate ink */
+    --text-secondary: #5C5A52;
+    --text-tertiary: #8E8B80;
+    --border-light: #E4E0D4;
+    --border-medium: #D3CEBE;
+    --accent: #D97757;           /* Claude coral */
+    --accent-hover: #C15F3C;
+    --accent-light: #F6E9E1;
+    --accent-glow: rgba(217, 119, 87, 0.16);
+    --success: #3F8F5E;
+    --success-light: #E7F1E9;
+    --success-bg: #D2E6D7;
+    --success-glow: rgba(63, 143, 94, 0.16);
+    --danger: #C2473A;
+    --danger-light: #F7E6E2;
+    --danger-bg: #F0D5CF;
+    --danger-glow: rgba(194, 71, 58, 0.16);
+    --warning: #BD862F;
+    --warning-light: #F6ECD7;
+    --warning-bg: #EEDDBC;
+    --warning-glow: rgba(189, 134, 47, 0.16);
+    /* Claude UI is flat & warm — gradient tokens resolve to solid fills/tints
+       so every existing reference stays on-palette. */
+    --gradient-primary: var(--accent);
+    --gradient-accent: var(--accent);
+    --gradient-success: var(--success);
+    --gradient-warm: var(--warning);
+    --gradient-subtle: #F3F1E9;
+    --gradient-card: var(--bg-primary);
+    --shadow-sm: 0 1px 2px 0 rgb(31 30 27 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(31 30 27 / 0.08), 0 2px 4px -2px rgb(31 30 27 / 0.05);
+    --shadow-lg: 0 10px 25px -5px rgb(31 30 27 / 0.1), 0 8px 10px -6px rgb(31 30 27 / 0.05);
+    --shadow-xl: 0 20px 40px -10px rgb(31 30 27 / 0.14);
     --shadow-glow: 0 0 20px var(--accent-glow);
     --shadow-success-glow: 0 0 20px var(--success-glow);
     --radius-sm: 8px;
@@ -47,8 +53,9 @@
     --radius-lg: 16px;
     --radius-xl: 20px;
     --radius-2xl: 24px;
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-mono: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+    --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+    --font-sans: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'Hanken Grotesk', ui-monospace, 'SF Mono', Monaco, monospace;
 }
 
 /* Reset & Base */
@@ -68,8 +75,7 @@ html {
 
 body {
     font-family: var(--font-sans);
-    background: var(--gradient-subtle);
-    background-attachment: fixed;
+    background: var(--bg-secondary);
     color: var(--text-primary);
     line-height: 1.6;
     min-height: 100vh;
@@ -95,12 +101,10 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    background: #f1f5f9;
-    /* Light background */
+    background: var(--bg-secondary);
     position: relative;
     overflow: hidden;
-    color: #0f172a;
-    /* Dark text */
+    color: var(--text-primary);
 }
 
 /* Background Shapes Removed */
@@ -134,31 +138,29 @@ body {
 }
 
 .brand-name {
-    font-size: 3.5rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-size: 3.6rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
     margin: 0;
-    background: linear-gradient(135deg, #0f172a 0%, #475569 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-primary);
     text-shadow: none;
 }
 
 .brand-divider {
-    width: 80px;
-    height: 4px;
-    background: linear-gradient(90deg, #6366f1, #ec4899);
-    margin: 24px auto;
+    width: 64px;
+    height: 3px;
+    background: var(--accent);
+    margin: 22px auto;
     border-radius: 2px;
-    box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
 }
 
 .brand-subtitle {
-    font-size: 1.125rem;
+    font-size: 1.0625rem;
     font-weight: 500;
-    color: #64748b;
+    color: var(--text-secondary);
     margin: 0;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
 }
 
@@ -185,31 +187,31 @@ body {
         0 4px 6px -2px rgba(0, 0, 0, 0.025);
 }
 
-/* Discrete Block Colors */
+/* Discrete Block Colors — Claude coral + warm slate */
 .module-card:first-child {
-    /* Attendance: Solid Blue */
-    background: #3b82f6;
+    /* Attendance: Claude coral */
+    background: #D97757;
     border: none;
-    box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 10px 20px rgba(217, 119, 87, 0.28);
 }
 
 .module-card:first-child:hover {
-    background: #2563eb;
+    background: #C15F3C;
     transform: translateY(-8px);
-    box-shadow: 0 20px 30px rgba(59, 130, 246, 0.4);
+    box-shadow: 0 20px 30px rgba(217, 119, 87, 0.36);
 }
 
 .module-card:nth-child(2) {
-    /* Salary: Solid Green */
-    background: #10b981;
+    /* Salary: warm slate ink */
+    background: #3E3A33;
     border: none;
-    box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 10px 20px rgba(31, 30, 27, 0.22);
 }
 
 .module-card:nth-child(2):hover {
-    background: #059669;
+    background: #2D2A24;
     transform: translateY(-8px);
-    box-shadow: 0 20px 30px rgba(16, 185, 129, 0.4);
+    box-shadow: 0 20px 30px rgba(31, 30, 27, 0.3);
 }
 
 /* Make text white inside the colored blocks */
@@ -269,11 +271,11 @@ body {
 
 /* Specific hover colors for icons when background becomes white */
 .module-card:first-child:hover .module-icon-wrap {
-    color: #2563eb;
+    color: #C15F3C;
 }
 
 .module-card:nth-child(2):hover .module-icon-wrap {
-    color: #059669;
+    color: #3E3A33;
 }
 
 /* Remove specific nth-child rules that were compatible with white backgrounds, we are using global transparency now */
@@ -287,7 +289,7 @@ body {
 .module-name {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--text-primary);
     margin: 0 0 8px 0;
 }
 
@@ -319,18 +321,18 @@ body {
 }
 
 .module-card:first-child:hover .module-arrow {
-    color: #2563eb;
+    color: #C15F3C;
 }
 
 .module-card:nth-child(2):hover .module-arrow {
-    color: #059669;
+    color: #3E3A33;
 }
 
 /* Footer */
 .landing-footer {
     padding: 32px;
     text-align: center;
-    color: #64748b;
+    color: var(--text-tertiary);
     font-size: 0.875rem;
     position: relative;
     z-index: 10;
@@ -345,13 +347,11 @@ body {
    ============================================ */
 .page-container {
     min-height: 100vh;
-    background:
-        linear-gradient(135deg, rgba(99, 102, 241, 0.02) 0%, rgba(139, 92, 246, 0.02) 50%, rgba(16, 185, 129, 0.02) 100%),
-        var(--bg-secondary);
+    background: var(--bg-secondary);
 }
 
 .page-header {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.03) 0%, rgba(139, 92, 246, 0.03) 100%);
+    background: var(--bg-glass);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border-light);
@@ -415,18 +415,15 @@ body {
 }
 
 .back-btn:hover {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+    background: var(--accent-light);
     color: var(--accent);
 }
 
 .page-title {
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+    font-weight: 500;
     color: var(--text-primary);
-    background: var(--gradient-accent);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -628,19 +625,18 @@ body {
    ============================================ */
 .tab-switcher {
     display: flex;
-    background: #e2e8f0;
-    /* Darker background for contrast */
+    background: var(--bg-tertiary);
     border-radius: 12px;
     padding: 4px;
     gap: 4px;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+    box-shadow: inset 0 1px 2px rgba(31, 30, 27, 0.06);
 }
 
 .tab-btn {
     padding: 8px 20px;
     border: none;
     background: transparent;
-    color: #64748b;
+    color: var(--text-secondary);
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
@@ -652,14 +648,14 @@ body {
 }
 
 .tab-btn.active {
-    background: #ffffff;
-    color: #0f172a;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
 }
 
 .tab-btn:hover:not(.active) {
-    color: #334155;
-    background: rgba(255, 255, 255, 0.5);
+    color: var(--text-primary);
+    background: rgba(252, 251, 248, 0.6);
 }
 
 /* Short tab labels are mobile-only (revealed in the mobile media query) */
@@ -849,14 +845,14 @@ body {
     left: 0;
     right: 0;
     height: 4px;
-    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    background: var(--accent);
     opacity: 0.5;
     transition: opacity 0.2s ease;
 }
 
 .worker-card:hover {
     border-color: var(--accent);
-    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.1);
+    box-shadow: 0 8px 24px rgba(217, 119, 87, 0.12);
 }
 
 .worker-card.has-status::before {
@@ -866,11 +862,11 @@ body {
 /* Marked worker cards - green highlight */
 .worker-card.marked {
     border-color: var(--success);
-    background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
+    background: linear-gradient(180deg, var(--success-light) 0%, var(--success-bg) 100%);
 }
 
 .worker-card.marked::before {
-    background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+    background: var(--success);
     opacity: 1;
 }
 
@@ -984,7 +980,7 @@ body {
 }
 
 .status-btn.A.active {
-    background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+    background: var(--danger);
     border-color: var(--danger);
     color: white;
 }
@@ -1449,7 +1445,7 @@ select.inline-edit-input {
 
 select.inline-edit-input:focus,
 input.inline-edit-input:focus {
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.18);
 }
 
 .month-section {
@@ -1525,7 +1521,7 @@ input.inline-edit-input:focus {
     font-weight: 700;
     color: var(--accent);
     background: var(--accent-light);
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(217, 119, 87, 0.25);
     padding: 8px 14px;
     border-radius: var(--radius-sm);
     margin-bottom: 14px;
@@ -1620,7 +1616,7 @@ tr:hover td {
 }
 
 .workers-table tr.worker-row:not(.needs-salary):hover td {
-    background: rgba(99, 102, 241, 0.08);
+    background: rgba(217, 119, 87, 0.1);
 }
 
 .warning {
@@ -1741,7 +1737,7 @@ tr:hover td {
     border-radius: var(--radius-sm);
     font-size: 0.75rem;
     font-weight: 600;
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(217, 119, 87, 0.25);
 }
 
 .status-badge {
@@ -2724,7 +2720,7 @@ tr.total-row td {
 }
 
 .edit-table tr:hover td {
-    background: rgba(99, 102, 241, 0.04);
+    background: rgba(217, 119, 87, 0.06);
 }
 
 .edit-table td.id-cell {
@@ -2750,7 +2746,7 @@ tr.total-row td {
 .edit-input:focus {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.12);
 }
 
 .edit-input.changed {
@@ -2955,7 +2951,7 @@ select.edit-input {
 }
 
 .edit-delete-btn:hover {
-    background: #dc2626;
+    background: #A6392E;
     box-shadow: var(--shadow-md);
 }
 
@@ -3415,7 +3411,7 @@ select.edit-input {
 }
 
 .mr-edit:hover {
-    background: #e0e7ff;
+    background: var(--accent-light);
 }
 
 .mr-remove {
@@ -3887,27 +3883,6 @@ select.edit-input {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   CARRY-OVER (kept by request) — only two things from the redesign:
-   (1) IBM Plex type   (2) sharp-edged, small-radius components.
-   Everything else is the original bright UI.
+   Claude theme keeps the original soft, rounded UI. The previous
+   sharp-edge override is retired so radii/type come from :root above.
    ════════════════════════════════════════════════════════════════ */
-:root {
-    --font-sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-    --font-mono:'IBM Plex Mono','SF Mono',Monaco,monospace;
-
-    /* sharp edges */
-    --radius-sm:4px;
-    --radius-md:5px;
-    --radius-lg:6px;
-    --radius-xl:8px;
-    --radius-2xl:10px;
-}
-
-/* Square the hard-coded rounded pieces (landing cards + pills/toggles) */
-.module-card, .brand-logo { border-radius: var(--radius-lg); }
-.module-icon-wrap, .module-arrow { border-radius: var(--radius-sm); }
-.filter-pill, .quick-filter-pill, .quick-date-picker, .day-chip, .period-chip,
-.dss-item, .pwc-pill, .status-pill, .mr-project, .absent-name, .team-badge,
-.status-badge, .month-total, .summary-mode-toggle, .summary-mode-btn,
-.pay-type-toggle, .pay-type-opt, .mark-day-toggle, .tab-switcher, .tab-btn,
-.progress-counter { border-radius: var(--radius-sm); }
