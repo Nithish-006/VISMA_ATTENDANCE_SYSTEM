@@ -3240,6 +3240,188 @@ select.edit-input {
     color: var(--danger, #e5484d);
 }
 
+/* ============================================================
+   Inline custom dropdowns (replace the OS-native <select> picker)
+   The native <select> stays in the DOM (hidden) as source of truth;
+   these styles paint the visible trigger + the inline option panel.
+   ============================================================ */
+.cs-native-hidden {
+    /* Keep it in the DOM/form but visually gone and non-interactive. */
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    overflow: hidden;
+}
+
+.cs {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+/* The trigger inherits the look of whatever select it replaced
+   (.select-input / .mr-work-input / …); we only add layout + caret. */
+.cs-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+}
+
+.cs-trigger:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.cs-trigger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.cs-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-trigger.cs-placeholder .cs-value {
+    color: var(--text-tertiary);
+}
+
+.cs-caret {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    transition: transform 0.18s ease;
+}
+
+.cs-open .cs-caret {
+    transform: rotate(180deg);
+    color: var(--accent);
+}
+
+.cs-open .cs-trigger {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.cs-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 100%;
+    width: max-content;
+    max-width: min(440px, 92vw);
+    z-index: 60;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-md);
+    box-shadow: 0 12px 28px rgba(31, 30, 27, 0.16);
+    padding: 6px;
+    animation: csPop 0.12s ease;
+}
+
+.cs-panel.cs-panel-up {
+    top: auto;
+    bottom: calc(100% + 6px);
+}
+
+@keyframes csPop {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.cs-search-wrap {
+    padding: 2px 2px 6px;
+}
+
+.cs-search {
+    width: 100%;
+    height: 38px;
+    padding: 0 12px;
+    border: 2px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    font-size: 0.9375rem;
+    font-family: inherit;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+}
+
+.cs-search:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.cs-list {
+    max-height: 264px;
+    overflow-y: auto;
+}
+
+.cs-option {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 0.9375rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.cs-option:hover,
+.cs-option.cs-active {
+    background: var(--accent-light);
+    color: var(--accent);
+}
+
+.cs-option.cs-selected {
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.cs-option.cs-selected::after {
+    content: '✓';
+    float: right;
+    margin-left: 12px;
+    color: var(--accent);
+}
+
+.cs-option.cs-option-placeholder {
+    color: var(--text-tertiary);
+}
+
+.cs-option.cs-disabled {
+    color: var(--text-tertiary);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.cs-empty {
+    padding: 10px 12px;
+    font-size: 0.875rem;
+    color: var(--text-tertiary);
+}
+
+/* Supervisor bar: the wrapper now occupies the select's flex slot. */
+.sup-select-group .cs {
+    flex: 1;
+    min-width: 240px;
+}
+
+@media (max-width: 768px) {
+    .sup-select-group .cs {
+        min-width: 0;
+    }
+}
+
 /* Marked workers list */
 .marked-list-header {
     display: flex;

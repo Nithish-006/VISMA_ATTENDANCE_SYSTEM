@@ -20,6 +20,9 @@
 <body>
     {% block content %}{% endblock %}
     {% block scripts %}{% endblock %}
+    <!-- Inline themed dropdowns: replaces the OS-native <select> picker
+         (which opens as a separate modal on mobile) on every page. -->
+    <script defer src="{{ url_for('static', filename='js/custom-select.js') }}"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/static/sw.js');
