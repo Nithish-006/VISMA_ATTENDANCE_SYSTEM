@@ -2509,6 +2509,11 @@ tr.total-row td {
         justify-content: center;
     }
 
+    /* Mark tab has two full-width add buttons (supervisor + worker): stack them */
+    #markControls {
+        flex-wrap: wrap;
+    }
+
     /* Progress counter - inline badge */
     .progress-counter {
         font-size: 0.75rem;
