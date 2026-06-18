@@ -1,8 +1,10 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, current_app
 from models import db, Salary, Attendance, Worker, compute_pay
 from routes.attendance import ist_now
 from decimal import Decimal
 from datetime import datetime, date
+from functools import wraps
+import hmac
 from sqlalchemy import func, case
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
@@ -11,6 +13,26 @@ from io import BytesIO
 import calendar
 
 salary_bp = Blueprint('salary', __name__)
+
+
+def require_api_key(f):
+    """Guard an endpoint with the shared FINANCE_API_KEY secret.
+
+    The caller passes the key in the `X-API-Key` header (preferred) or an
+    `api_key` query param. Comparison is constant-time to avoid leaking the key
+    through timing. If no key is configured server-side the endpoint refuses all
+    requests (503) rather than silently running open — security is opt-in.
+    """
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        expected = current_app.config.get('FINANCE_API_KEY')
+        if not expected:
+            return jsonify({'error': 'API access is not configured on the server'}), 503
+        provided = request.headers.get('X-API-Key') or request.args.get('api_key', '')
+        if not provided or not hmac.compare_digest(str(provided), str(expected)):
+            return jsonify({'error': 'Invalid or missing API key'}), 401
+        return f(*args, **kwargs)
+    return wrapper
 
 
 @salary_bp.route('/api/salary', methods=['GET'])
@@ -80,6 +102,211 @@ def get_monthly_salaries():
         })
 
     return jsonify(result)
+
+
+@salary_bp.route('/api/salary/project', methods=['GET'])
+@require_api_key
+def get_project_salary():
+    """Salary master feed for one project, scoped and broken down by month.
+
+    Built for an external finance app to assemble its own master report /
+    dashboard. The `salary` table is one row per worker per MONTH and carries no
+    project, so it can't be filtered by project on its own; the project lives on
+    `attendance`. We therefore scope attendance to the project, then price each
+    present-day with that month's stored base pay/day from the salary table
+    (falling back to the worker master rate when a month has none). This is the
+    same pricing the salary dashboard and the exported report use, so the figures
+    line up exactly.
+
+    Query params:
+      project      - REQUIRED unless project_id given. The exact canonical
+                     attendance.project value, e.g. "123 - GANTRY CRANE".
+      project_id   - Alternative to project: matches every project whose value
+                     starts with "{id} - " (the canonical "{id} - {name}" form).
+      year, month  - Optional. Restrict to a single month (month is 1-12).
+      start_date,
+      end_date     - Optional YYYY-MM-DD range (ignored if year/month given).
+      include_workers - "false" to omit the per-worker rows (lighter summary).
+
+    Returns one object: project label, the resolved period, period-wide totals
+    (headcount of distinct present workers, present-days, OT hours, base/OT/total
+    pay) and a `months` array, each month carrying the same totals plus, by
+    default, a `workers` array.
+    """
+    project = request.args.get('project', '').strip()
+    project_id = request.args.get('project_id', '').strip()
+    year_str = request.args.get('year', '').strip()
+    month_str = request.args.get('month', '').strip()
+    start_date_str = request.args.get('start_date', '').strip()
+    end_date_str = request.args.get('end_date', '').strip()
+    include_workers = request.args.get('include_workers', 'true').lower() != 'false'
+
+    if not project and not project_id:
+        return jsonify({'error': 'project (or project_id) is required'}), 400
+
+    att_query = Attendance.query
+    if project:
+        att_query = att_query.filter(Attendance.project == project)
+    else:
+        # Match the canonical "{id} - {name}" form by its leading id segment.
+        att_query = att_query.filter(Attendance.project.like(f'{project_id} - %'))
+
+    # Optional time scoping: a single (year, month) wins; otherwise a date range.
+    if year_str:
+        if not year_str.isdigit():
+            return jsonify({'error': 'year must be a number'}), 400
+        att_query = att_query.filter(func.year(Attendance.date) == int(year_str))
+        if month_str:
+            if not month_str.isdigit() or not 1 <= int(month_str) <= 12:
+                return jsonify({'error': 'month must be 1-12'}), 400
+            att_query = att_query.filter(func.month(Attendance.date) == int(month_str))
+    elif start_date_str or end_date_str:
+        try:
+            if start_date_str:
+                att_query = att_query.filter(
+                    Attendance.date >= datetime.strptime(start_date_str, '%Y-%m-%d').date())
+            if end_date_str:
+                att_query = att_query.filter(
+                    Attendance.date <= datetime.strptime(end_date_str, '%Y-%m-%d').date())
+        except ValueError:
+            return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+    att_records = att_query.order_by(Attendance.date, Attendance.worker_id).all()
+
+    # Worker identity (name / designation / rate / pay model) from the master.
+    worker_ids = sorted({a.worker_id for a in att_records})
+    winfo = {}
+    if worker_ids:
+        for w in Worker.query.filter(Worker.id.in_(worker_ids)).all():
+            winfo[w.id] = {
+                'name': w.name,
+                'designation': w.designation or '',
+                'rate': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
+                'monthly_salaried': bool(w.monthly_salaried),
+            }
+
+    # Per-month rate: the base pay/day in force each month is stored on that
+    # month's salary row, so a worker raised mid-life keeps the old rate on
+    # earlier months. Keyed by (worker_id, year, month) -> (base, monthly).
+    month_rate = {}
+    if worker_ids:
+        for s in Salary.query.filter(Salary.worker_id.in_(worker_ids)).all():
+            base = float(s.base_salary_per_day) if s.base_salary_per_day else 0
+            month_rate[(s.worker_id, s.year, s.month)] = (base, bool(s.monthly_salaried))
+
+    def basis_for(a):
+        """(rate, monthly_salaried) for one record, using that month's stored rate.
+
+        Falls back to the worker's current master rate when a month has no stored
+        rate (or it's 0) — a genuinely rate-less worker stays at 0.
+        """
+        info = winfo.get(a.worker_id, {})
+        master_rate = info.get('rate', 0)
+        key = (a.worker_id, a.date.year, a.date.month)
+        if key in month_rate:
+            rate, monthly = month_rate[key]
+            return (rate if rate > 0 else master_rate), monthly
+        return master_rate, info.get('monthly_salaried', False)
+
+    # Aggregate per month, and per worker within each month.
+    months = {}
+    for a in att_records:
+        mkey = (a.date.year, a.date.month)
+        m = months.setdefault(mkey, {'workers': {}, 'present_dates': set()})
+        rate, monthly = basis_for(a)
+        ot = float(a.ot_hours) if a.ot_hours else 0
+
+        info = winfo.get(a.worker_id, {})
+        w = m['workers'].setdefault(a.worker_id, {
+            'worker_id': a.worker_id,
+            'name': info.get('name', f'Worker {a.worker_id}'),
+            'designation': info.get('designation', ''),
+            'monthly_salaried': monthly,
+            'rate': rate,
+            'present_days': 0, 'absent_days': 0, 'holiday_days': 0,
+            'ot_hours': 0.0, 'base_pay': 0.0, 'ot_pay': 0.0,
+        })
+        w['rate'] = rate  # that month's rate is stable for the worker
+        w['monthly_salaried'] = monthly
+        if a.status == 'P':
+            w['present_days'] += 1
+            w['base_pay'] += rate
+            m['present_dates'].add(a.date)
+        elif a.status == 'A':
+            w['absent_days'] += 1
+        elif a.status == 'H':
+            w['holiday_days'] += 1
+        w['ot_hours'] += ot
+        # OT is paid only to daily-rate workers, at the hourly rate (rate / 8).
+        if not monthly and rate > 0:
+            w['ot_pay'] += (rate / 8) * ot
+
+    # Shape the response, newest month first.
+    months_out = []
+    g_headcount = set()
+    g_present = g_ot = g_base = g_otpay = 0
+    for (yr, mo) in sorted(months.keys(), reverse=True):
+        m = months[(yr, mo)]
+        workers_out = []
+        m_present = m_ot = m_base = m_otpay = 0
+        for wid in sorted(m['workers'], key=lambda i: m['workers'][i]['name']):
+            w = m['workers'][wid]
+            base_pay = round(w['base_pay'], 2)
+            ot_pay = round(w['ot_pay'], 2)
+            workers_out.append({
+                'worker_id': w['worker_id'],
+                'name': w['name'],
+                'designation': w['designation'],
+                'monthly_salaried': w['monthly_salaried'],
+                'base_salary_per_day': round(w['rate'], 2),
+                'present_days': w['present_days'],
+                'absent_days': w['absent_days'],
+                'holiday_days': w['holiday_days'],
+                'ot_hours': round(w['ot_hours'], 2),
+                'base_pay': base_pay,
+                'ot_pay': ot_pay,
+                'total_salary': round(base_pay + ot_pay, 2),
+            })
+            m_present += w['present_days']
+            m_ot += w['ot_hours']
+            m_base += base_pay
+            m_otpay += ot_pay
+            g_headcount.add(wid)
+
+        g_present += m_present
+        g_ot += m_ot
+        g_base += m_base
+        g_otpay += m_otpay
+
+        month_obj = {
+            'year': yr,
+            'month': mo,
+            'month_key': f'{yr}-{mo:02d}',
+            'month_name': f'{calendar.month_name[mo]} {yr}',
+            'headcount': len(m['workers']),
+            'working_days': len(m['present_dates']),
+            'total_present_days': m_present,
+            'total_ot_hours': round(m_ot, 2),
+            'total_base_pay': round(m_base, 2),
+            'total_ot_pay': round(m_otpay, 2),
+            'total_salary': round(m_base + m_otpay, 2),
+        }
+        if include_workers:
+            month_obj['workers'] = workers_out
+        months_out.append(month_obj)
+
+    return jsonify({
+        'project': project or f'{project_id} - *',
+        'project_id': project_id or (project.split(' - ', 1)[0] if ' - ' in project else None),
+        'headcount': len(g_headcount),
+        'total_present_days': g_present,
+        'total_ot_hours': round(g_ot, 2),
+        'total_base_pay': round(g_base, 2),
+        'total_ot_pay': round(g_otpay, 2),
+        'total_salary': round(g_base + g_otpay, 2),
+        'month_count': len(months_out),
+        'months': months_out,
+    })
 
 
 @salary_bp.route('/api/salary/<int:record_id>', methods=['GET'])

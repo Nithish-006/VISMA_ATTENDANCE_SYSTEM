@@ -63,6 +63,11 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
+    # Shared secret guarding external integration endpoints (e.g. the finance
+    # app's project-salary feed). When unset, those endpoints refuse all calls
+    # rather than running open — security must be opted into explicitly.
+    FINANCE_API_KEY = os.environ.get('FINANCE_API_KEY')
+
     # Read-only connection to the shared VISMA projects registry (may be None
     # if not configured; the registry service handles that case explicitly).
     PROJECTS_DB_URL = get_projects_db_url()
