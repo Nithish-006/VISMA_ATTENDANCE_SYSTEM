@@ -3292,6 +3292,19 @@ select.edit-input {
     cursor: not-allowed;
 }
 
+/* Modal form selects (e.g. the Add Worker "Designation" picker) are styled via
+   `.form-group select`, which the replacement button doesn't match — so give
+   the trigger the same box here, otherwise it renders borderless and thin. */
+.form-group .cs-trigger {
+    height: 48px;
+    padding: 0 16px;
+    border: 2px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+}
+
 .cs-value {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3320,24 +3333,18 @@ select.edit-input {
 }
 
 .cs-panel {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    min-width: 100%;
+    /* Fixed + portaled to <body> in JS so no ancestor overflow/transform can
+       clip it (modals, the sliding-panels wrapper). Coordinates set inline. */
+    position: fixed;
     width: max-content;
     max-width: min(440px, 92vw);
-    z-index: 60;
+    z-index: 2000;
     background: var(--bg-primary);
     border: 1px solid var(--border-medium);
     border-radius: var(--radius-md);
     box-shadow: 0 12px 28px rgba(31, 30, 27, 0.16);
     padding: 6px;
     animation: csPop 0.12s ease;
-}
-
-.cs-panel.cs-panel-up {
-    top: auto;
-    bottom: calc(100% + 6px);
 }
 
 @keyframes csPop {
@@ -3469,6 +3476,15 @@ select.edit-input {
 .marked-row:hover {
     box-shadow: var(--shadow-md);
     transform: translateY(-1px);
+}
+
+/* While an inline dropdown is open, lift its row above the rows below it.
+   The hover/transform on .marked-row makes each row its own stacking context,
+   which would otherwise trap the open .cs-panel inside the row and let the
+   next row's controls paint over the option list (mobile edit bug). */
+.marked-row:has(.cs.cs-open) {
+    position: relative;
+    z-index: 50;
 }
 
 .mr-main {

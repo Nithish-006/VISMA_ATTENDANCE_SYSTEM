@@ -100,11 +100,12 @@
         cs.searchEl.value = '';
         renderOptions(cs, '');
 
+        // Portal the panel to <body> so it floats above everything and can't be
+        // clipped by an ancestor's overflow (modals, the sliding-panels wrapper)
+        // or trapped inside a transformed ancestor's stacking context.
+        document.body.appendChild(cs.panel);
         cs.panel.style.display = 'block';
-        // Flip above the trigger when there isn't room below.
-        const rect = cs.trigger.getBoundingClientRect();
-        const below = window.innerHeight - rect.bottom;
-        cs.panel.classList.toggle('cs-panel-up', below < 300 && rect.top > below);
+        position(cs);
 
         // Bring the selected row into view.
         const selRow = cs.listEl.querySelector('.cs-selected');
@@ -113,10 +114,38 @@
         if (many) setTimeout(() => cs.searchEl.focus(), 0);
     }
 
+    // Place the (body-portaled) panel in fixed coordinates anchored to the
+    // trigger: flip above it when there's more room there, cap the list height
+    // so the whole panel fits in the viewport, and keep it on-screen sideways.
+    function position(cs) {
+        const r = cs.trigger.getBoundingClientRect();
+        const p = cs.panel;
+        const GAP = 6, EDGE = 8;
+        const below = window.innerHeight - r.bottom;
+        const above = r.top;
+
+        p.style.minWidth = r.width + 'px';
+
+        const flipUp = below < 240 && above > below;
+        const room = (flipUp ? above : below) - GAP - EDGE;
+        const chrome = p.offsetHeight - cs.listEl.offsetHeight;  // search + padding
+        cs.listEl.style.maxHeight = Math.max(120, Math.min(264, room - chrome)) + 'px';
+
+        const vw = window.innerWidth;
+        const pw = Math.max(p.offsetWidth, r.width);
+        let left = Math.min(r.left, vw - EDGE - pw);
+        if (left < EDGE) left = EDGE;
+        p.style.left = left + 'px';
+
+        // Set top after the height is finalised so an up-flip lands correctly.
+        p.style.top = (flipUp ? r.top - GAP - p.offsetHeight : r.bottom + GAP) + 'px';
+    }
+
     function close(cs) {
         cs.panel.style.display = 'none';
+        // Return the panel to its wrapper so it's torn down with the control.
+        cs.wrap.insertBefore(cs.panel, cs.select);
         cs.wrap.classList.remove('cs-open');
-        cs.panel.classList.remove('cs-panel-up');
         cs.trigger.setAttribute('aria-expanded', 'false');
         if (openInstance === cs) openInstance = null;
     }
@@ -261,14 +290,28 @@
         (root || document).querySelectorAll('select').forEach(enhance);
     }
 
-    // Close on outside click / Escape.
+    // Close on outside click / Escape. The panel lives in <body> while open,
+    // so the hit-test has to allow clicks landing inside it too.
     document.addEventListener('mousedown', function (e) {
-        if (openInstance && !openInstance.wrap.contains(e.target)) close(openInstance);
+        if (openInstance
+            && !openInstance.wrap.contains(e.target)
+            && !openInstance.panel.contains(e.target)) {
+            close(openInstance);
+        }
     });
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' && openInstance) {
             const cs = openInstance; close(cs); cs.trigger.focus();
         }
+    });
+
+    // Keep the floating panel glued to its trigger as the page/modal scrolls
+    // or the window resizes (capture phase catches inner scroll containers).
+    window.addEventListener('scroll', function () {
+        if (openInstance) position(openInstance);
+    }, true);
+    window.addEventListener('resize', function () {
+        if (openInstance) position(openInstance);
     });
 
     // Initial pass + watch for selects added later (e.g. re-rendered rows).
