@@ -3,6 +3,35 @@
 {% block title %}Attendance - Visma{% endblock %}
 
 {% block content %}
+<style>
+    /* Share Attendance modal — preview of the WhatsApp message + actions */
+    .share-hint { margin: 0 0 0.75rem; color: var(--text-muted, #6b6b6b); font-size: 0.9rem; }
+    .share-preview {
+        background: var(--surface-soft, #f6f4ee);
+        border: 1px solid var(--border, #e3ded2);
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+        margin: 0 0 1rem;
+        max-height: 45vh;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.82rem;
+        line-height: 1.5;
+        color: var(--text, #2b2b2b);
+    }
+    .share-actions { display: flex; gap: 0.6rem; }
+    .share-actions .btn {
+        flex: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        text-decoration: none;
+        cursor: pointer;
+    }
+</style>
 <div class="page-container">
     <header class="page-header">
         <div class="header-content header-three-col">
@@ -244,6 +273,24 @@
                 </div>
                 <button type="submit" class="submit-btn">Add Labour</button>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Share Attendance Modal (shown after Finish, to post the day's roster to WhatsApp) -->
+<div id="shareModal" class="modal" style="display: none;">
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <h2>Share Attendance</h2>
+            <button class="close-btn" onclick="closeShareModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="share-hint">Attendance saved. Post it to your WhatsApp group:</p>
+            <pre id="sharePreview" class="share-preview"></pre>
+            <div class="share-actions">
+                <button type="button" class="btn btn-secondary" id="copyShareBtn" onclick="copyAttendanceText()">📋 Copy</button>
+                <a id="waShareBtn" class="btn btn-primary" target="_blank" rel="noopener">🟢 Share to WhatsApp</a>
+            </div>
         </div>
     </div>
 </div>

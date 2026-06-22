@@ -570,6 +570,121 @@ function updateEntryOT(index, el) {
 }
 
 // ============================================
+// SHARE TO WHATSAPP
+//
+// After Finish, the day's roster is rendered as plain WhatsApp-friendly text the
+// supervisor can either copy to the clipboard or one-tap share via wa.me. We do
+// not auto-post to any group (no official API supports that and unofficial
+// automation risks a ban) — the supervisor picks the group and hits send.
+// ============================================
+
+let shareMessageText = '';
+
+function currentSupervisorName() {
+    const s = supervisors.find(x => x.id === selectedSupervisorId);
+    return s ? s.name : '';
+}
+
+// "2026-06-22" -> "22 Jun 2026". Built from the literal Y-M-D so it never drifts
+// with the viewer's timezone (the rest of the app reckons dates in IST).
+function formatShareDate(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${d} ${months[m - 1]} ${y}`;
+}
+
+// Build the plain-text attendance report. *bold* markers render as bold in
+// WhatsApp; on any other surface they're harmless asterisks.
+function buildAttendanceMessage(list) {
+    const present = list.filter(e => e.status === 'P').sort((a, b) => a.name.localeCompare(b.name));
+    const absent = list.filter(e => e.status === 'A').sort((a, b) => a.name.localeCompare(b.name));
+    const totalOT = present.reduce((s, e) => s + (parseFloat(e.ot_hours) || 0), 0);
+
+    const lines = [];
+    lines.push(`📋 *Attendance — ${formatShareDate(markDateStr)}*`);
+    const sup = currentSupervisorName();
+    if (sup) lines.push(`👷 Supervisor: ${sup}`);
+    lines.push('');
+
+    lines.push(`✅ *Present (${present.length})*`);
+    if (present.length) {
+        // Group present workers under their project. Workers without a project
+        // fall under "No project", listed last; projects otherwise alphabetical.
+        const groups = {};
+        present.forEach(e => {
+            const proj = e.project || 'No project';
+            (groups[proj] = groups[proj] || []).push(e);
+        });
+        const projectNames = Object.keys(groups).sort((a, b) => {
+            if (a === 'No project') return 1;
+            if (b === 'No project') return -1;
+            return a.localeCompare(b);
+        });
+        projectNames.forEach(proj => {
+            lines.push('');
+            lines.push(`*${proj}*`);
+            groups[proj].forEach((e, i) => {
+                const work = e.work ? ` — ${e.work}` : '';
+                const ot = (parseFloat(e.ot_hours) || 0) > 0 ? ` (+${e.ot_hours} OT)` : '';
+                lines.push(`${i + 1}. ${e.name}${work}${ot}`);
+            });
+        });
+    } else {
+        lines.push('—');
+    }
+    lines.push('');
+
+    lines.push(`❌ *Absent (${absent.length})*`);
+    if (absent.length) {
+        absent.forEach((e, i) => lines.push(`${i + 1}. ${e.name}`));
+    } else {
+        lines.push('—');
+    }
+    lines.push('');
+
+    lines.push(`🕐 Total OT: ${Math.round(totalOT * 10) / 10} hrs`);
+
+    return lines.join('\n');
+}
+
+function openShareModal(list) {
+    shareMessageText = buildAttendanceMessage(list);
+    document.getElementById('sharePreview').textContent = shareMessageText;
+    document.getElementById('waShareBtn').href = `https://wa.me/?text=${encodeURIComponent(shareMessageText)}`;
+    document.getElementById('copyShareBtn').textContent = '📋 Copy';
+    document.getElementById('shareModal').style.display = 'flex';
+}
+
+function closeShareModal() {
+    document.getElementById('shareModal').style.display = 'none';
+}
+
+async function copyAttendanceText() {
+    const btn = document.getElementById('copyShareBtn');
+    const ok = () => { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000); };
+
+    // navigator.clipboard needs a secure context; fall back to execCommand otherwise.
+    if (navigator.clipboard && window.isSecureContext) {
+        try { await navigator.clipboard.writeText(shareMessageText); ok(); return; }
+        catch (e) { /* fall through to legacy path */ }
+    }
+    const ta = document.createElement('textarea');
+    ta.value = shareMessageText;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); ok(); }
+    catch (e) { btn.textContent = 'Copy failed'; }
+    document.body.removeChild(ta);
+}
+
+// Close the share modal when the backdrop is clicked.
+document.getElementById('shareModal')?.addEventListener('click', function (e) {
+    if (e.target === this) closeShareModal();
+});
+
+// ============================================
 // COMMIT
 // ============================================
 
@@ -616,8 +731,15 @@ async function finishAttendance() {
         showMessage(`Attendance updated for ${entries.length} worker(s).`, 'success');
         window.summaryLoaded = false;
 
+        // Snapshot the saved roster before loadRoster() reassigns `entries`, so
+        // the WhatsApp share reflects exactly what was just committed.
+        const savedEntries = entries.slice();
+
         await loadProjects();  // pick up any newly created project
         await loadRoster();    // re-sync persisted state for this supervisor
+
+        // Offer to post the day's attendance to WhatsApp (copy / share as text).
+        if (savedEntries.length > 0) openShareModal(savedEntries);
     } catch (e) {
         showMessage(e.message || 'Failed to update attendance.', 'error');
         console.error(e);
