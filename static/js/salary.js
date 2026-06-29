@@ -770,8 +770,11 @@ async function saveWorkerDetails(workerId) {
     const status = document.getElementById(`editStatus_${workerId}`);
 
     const name = row.querySelector('.edit-name').value.trim().toUpperCase();
-    const designation = row.querySelector('.edit-designation').value;
-    const team = row.querySelector('.edit-team').value;
+    // Tag-qualified: custom-select.js copies the select's className onto its
+    // trigger <button> (placed before the select), so a bare '.edit-designation'
+    // would match the button (value always '') instead of the real select.
+    const designation = row.querySelector('select.edit-designation').value;
+    const team = row.querySelector('select.edit-team').value;
     const basePay = parseFloat(row.querySelector('.edit-base-pay').value) || 0;
     const toggle = document.getElementById(`payType_${workerId}`);
     const monthlySalaried = toggle.dataset.value === 'monthly';
@@ -835,8 +838,8 @@ async function submitWorkerDetails(workerId, payload) {
 
         // Update original values so changed highlighting clears
         row.querySelector('.edit-name').dataset.original = payload.name;
-        row.querySelector('.edit-designation').dataset.original = payload.designation;
-        row.querySelector('.edit-team').dataset.original = payload.team || '';
+        row.querySelector('select.edit-designation').dataset.original = payload.designation;
+        row.querySelector('select.edit-team').dataset.original = payload.team || '';
         row.querySelector('.edit-base-pay').dataset.original = payload.base_salary_per_day;
         const newType = payload.monthly_salaried ? 'monthly' : 'daily';
         toggle.dataset.original = newType;
