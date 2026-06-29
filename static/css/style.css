@@ -1890,6 +1890,8 @@ tr.total-row td {
     padding: 0 14px;
     font-size: 0.8125rem;
     border-radius: 16px;
+    /* Never let a label like "This Month" wrap onto a second line. */
+    white-space: nowrap;
 }
 
 .quick-date-picker {

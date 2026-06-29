@@ -388,6 +388,7 @@
                             <span class="asof-label">As of</span>
                             <div class="period-quick-chips">
                                 <button type="button" class="quick-filter-pill current-chip active" data-range="today" onclick="setCurrentPeriod('today')">Today</button>
+                                <button type="button" class="quick-filter-pill current-chip" data-range="yesterday" onclick="setCurrentPeriod('yesterday')">Yesterday</button>
                                 <button type="button" class="quick-filter-pill current-chip" data-range="week" onclick="setCurrentPeriod('week')">This Week</button>
                                 <button type="button" class="quick-filter-pill current-chip" data-range="month" onclick="setCurrentPeriod('month')">This Month</button>
                             </div>
@@ -864,7 +865,11 @@ let lastCurrentData = null;
 function setCurrentPeriod(range) {
     let start, end;
     const today = istToday();
-    if (range === 'week') {
+    if (range === 'yesterday') {
+        const y = new Date(today);
+        y.setDate(today.getDate() - 1);
+        start = end = isoDate(y);
+    } else if (range === 'week') {
         const day = today.getDay();
         const monday = new Date(today);
         monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
