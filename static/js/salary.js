@@ -1,6 +1,9 @@
 // Salary Page JavaScript
 
 let salaryData = null;
+// Canonical team list, cached after first load — reused by the summary filter,
+// the Worker Pay per-row dropdowns and the Add-Worker modal.
+let teamsList = [];
 
 // All dates in this app are reckoned in IST, independent of the viewer's
 // timezone. These helpers keep "today", date parsing, and formatting from
@@ -145,31 +148,55 @@ function initSalarySummary() {
     loadSalarySummary();
 
     // Auto-load when any filter changes
-    ['salaryStartDate', 'salaryEndDate', 'salaryProject', 'salaryWorker'].forEach(id => {
+    ['salaryStartDate', 'salaryEndDate', 'salaryProject', 'salaryWorker',
+     'salarySupervisor', 'salaryTeam'].forEach(id => {
         document.getElementById(id).addEventListener('change', loadSalarySummary);
     });
 }
 
 async function loadSalaryFilters() {
     try {
-        const [projectsRes, laboursRes] = await Promise.all([
+        const [projectsRes, laboursRes, supervisorsRes, teamsRes] = await Promise.all([
             fetch('/api/projects'),
-            fetch('/api/labours')
+            fetch('/api/labours'),
+            fetch('/api/supervisors'),
+            fetch('/api/teams')
         ]);
         const projects = await projectsRes.json();
         const labours = await laboursRes.json();
+        const supervisors = await supervisorsRes.json();
+        teamsList = await teamsRes.json();
 
         const projectSelect = document.getElementById('salaryProject');
         projectSelect.innerHTML = '<option value="">All Projects</option>';
         projects.forEach(p => {
-            projectSelect.innerHTML += `<option value="${p}">${p}</option>`;
+            projectSelect.innerHTML += `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`;
         });
 
         const workerSelect = document.getElementById('salaryWorker');
         workerSelect.innerHTML = '<option value="">All Labours</option>';
         labours.forEach(l => {
-            workerSelect.innerHTML += `<option value="${l.worker_id}">${l.name}</option>`;
+            workerSelect.innerHTML += `<option value="${l.worker_id}">${escapeHtml(l.name)}</option>`;
         });
+
+        const supSelect = document.getElementById('salarySupervisor');
+        supSelect.innerHTML = '<option value="">All Supervisors</option>';
+        supervisors.forEach(s => {
+            supSelect.innerHTML += `<option value="${s.id}">${escapeHtml(s.name)}</option>`;
+        });
+
+        const teamSelect = document.getElementById('salaryTeam');
+        teamSelect.innerHTML = '<option value="">All Teams</option>';
+        teamsList.forEach(t => {
+            teamSelect.innerHTML += `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`;
+        });
+
+        // Keep the Add-Worker modal's team dropdown in sync with the same list.
+        const newTeam = document.getElementById('newTeam');
+        if (newTeam) {
+            newTeam.innerHTML = '<option value="">Select team...</option>' +
+                teamsList.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+        }
     } catch (e) {
         console.error('Error loading salary filters:', e);
     }
@@ -188,6 +215,8 @@ function resetSalaryFilters() {
     document.getElementById('salaryEndDate').value = isoDate(sunday);
     document.getElementById('salaryProject').value = '';
     document.getElementById('salaryWorker').value = '';
+    document.getElementById('salarySupervisor').value = '';
+    document.getElementById('salaryTeam').value = '';
 
     // Clear active month pill
     document.querySelectorAll('#monthPillsBar .filter-pill').forEach(b => b.classList.remove('active'));
@@ -200,6 +229,8 @@ async function loadSalarySummary() {
     const endDate = document.getElementById('salaryEndDate').value;
     const project = document.getElementById('salaryProject').value;
     const workerId = document.getElementById('salaryWorker').value;
+    const supervisorId = document.getElementById('salarySupervisor').value;
+    const team = document.getElementById('salaryTeam').value;
     const dashboard = document.getElementById('salarySummaryDashboard');
 
     if (!startDate || !endDate) {
@@ -220,6 +251,8 @@ async function loadSalarySummary() {
         let url = `/api/attendance/summary?start_date=${startDate}&end_date=${endDate}`;
         if (project) url += `&project=${encodeURIComponent(project)}`;
         if (workerId) url += `&worker_id=${workerId}`;
+        if (supervisorId) url += `&supervisor_id=${supervisorId}`;
+        if (team) url += `&team=${encodeURIComponent(team)}`;
 
         const response = await fetch(url);
         const data = await response.json();
@@ -413,12 +446,16 @@ async function exportExcel() {
         const endDate = document.getElementById('salaryEndDate')?.value || '';
         const selectedProject = document.getElementById('salaryProject')?.value || '';
         const selectedWorker = document.getElementById('salaryWorker')?.value || '';
+        const selectedSupervisor = document.getElementById('salarySupervisor')?.value || '';
+        const selectedTeam = document.getElementById('salaryTeam')?.value || '';
 
         const params = new URLSearchParams();
         if (startDate) params.set('start_date', startDate);
         if (endDate) params.set('end_date', endDate);
         if (selectedProject) params.set('project', selectedProject);
         if (selectedWorker) params.set('worker_id', selectedWorker);
+        if (selectedSupervisor) params.set('supervisor_id', selectedSupervisor);
+        if (selectedTeam) params.set('team', selectedTeam);
         const exportUrl = `/api/salary/export?${params.toString()}`;
 
         const response = await fetch(exportUrl);
@@ -618,11 +655,27 @@ function showSalaryPanel(panel) {
 // WORKER PAY  (base salary, designation, name, delete)
 // ============================================
 
+// <option>s for a Team dropdown, current value preselected. Built from the
+// cached team list so a worker's existing team (incl. any ad-hoc value) survives.
+function teamOptionsHtml(selected) {
+    return '<option value="">--</option>' +
+        teamsList.map(t =>
+            `<option value="${escapeHtml(t)}" ${t === selected ? 'selected' : ''}>${escapeHtml(t)}</option>`
+        ).join('');
+}
+
 async function loadWorkerEditor() {
     const container = document.getElementById('workerEditorContainer');
     container.innerHTML = '<div class="loading">Loading worker details...</div>';
 
     try {
+        // Ensure the team list is available for the per-row dropdowns even if the
+        // Summary filters (which normally load it) haven't run yet.
+        if (!teamsList.length) {
+            try { teamsList = await (await fetch('/api/teams')).json(); }
+            catch (e) { teamsList = []; }
+        }
+
         const response = await fetch('/api/labours');
         const labours = await response.json();
 
@@ -641,6 +694,7 @@ async function loadWorkerEditor() {
                                 <th>ID</th>
                                 <th>Name</th>
                                 <th>Designation</th>
+                                <th>Team</th>
                                 <th>Base Pay/Day</th>
                                 <th>Pay Type</th>
                                 <th>Actions</th>
@@ -658,6 +712,11 @@ async function loadWorkerEditor() {
                                             <option value="WELDER" ${l.designation === 'WELDER' ? 'selected' : ''}>WELDER</option>
                                             <option value="HELPER" ${l.designation === 'HELPER' ? 'selected' : ''}>HELPER</option>
                                             <option value="RIGGER" ${l.designation === 'RIGGER' ? 'selected' : ''}>RIGGER</option>
+                                        </select>
+                                    </td>
+                                    <td data-label="Team">
+                                        <select class="edit-input edit-team" data-original="${escapeHtml(l.team || '')}" onchange="markEditChanged(this)">
+                                            ${teamOptionsHtml(l.team || '')}
                                         </select>
                                     </td>
                                     <td data-label="Base Pay/Day"><input type="number" class="edit-input edit-base-pay" min="0" step="50" value="${l.base_salary_per_day || 0}" data-original="${l.base_salary_per_day || 0}" oninput="markEditChanged(this)"></td>
@@ -712,6 +771,7 @@ async function saveWorkerDetails(workerId) {
 
     const name = row.querySelector('.edit-name').value.trim().toUpperCase();
     const designation = row.querySelector('.edit-designation').value;
+    const team = row.querySelector('.edit-team').value;
     const basePay = parseFloat(row.querySelector('.edit-base-pay').value) || 0;
     const toggle = document.getElementById(`payType_${workerId}`);
     const monthlySalaried = toggle.dataset.value === 'monthly';
@@ -743,7 +803,7 @@ async function saveWorkerDetails(workerId) {
     }
 
     await submitWorkerDetails(workerId, {
-        name, designation, base_salary_per_day: basePay,
+        name, designation, team, base_salary_per_day: basePay,
         monthly_salaried: monthlySalaried
     });
 }
@@ -776,6 +836,7 @@ async function submitWorkerDetails(workerId, payload) {
         // Update original values so changed highlighting clears
         row.querySelector('.edit-name').dataset.original = payload.name;
         row.querySelector('.edit-designation').dataset.original = payload.designation;
+        row.querySelector('.edit-team').dataset.original = payload.team || '';
         row.querySelector('.edit-base-pay').dataset.original = payload.base_salary_per_day;
         const newType = payload.monthly_salaried ? 'monthly' : 'daily';
         toggle.dataset.original = newType;
@@ -861,6 +922,7 @@ async function addNewWorker(e) {
 
     const name = document.getElementById('newName').value.trim().toUpperCase();
     const designation = document.getElementById('newDesignation').value;
+    const team = document.getElementById('newTeam').value;
     const baseSalary = parseFloat(document.getElementById('newSalary').value) || 0;
 
     if (!name) {
@@ -875,6 +937,7 @@ async function addNewWorker(e) {
             body: JSON.stringify({
                 name: name,
                 designation: designation,
+                team: team,
                 base_salary_per_day: baseSalary
             })
         });

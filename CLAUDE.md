@@ -44,7 +44,10 @@ python import_data.py --summary
 **Key Data Flows**:
 1. Attendance updates trigger salary recalculation
 2. Upsert pattern for attendance records (insert-or-update on unique constraint)
-3. Worker lists are flat (alphabetical by name); there is no team concept
+3. Worker lists are flat (alphabetical by name). Each worker carries a `team`
+   label (one of `models.TEAMS`: Rajeeb/Visma/Ambeth) on the worker master.
+   Team is NOT snapshotted onto salary rows — summary/salary slice by team via a
+   live join from attendance back to the worker master (same as project pricing).
 
 ## API Endpoints
 
@@ -53,8 +56,9 @@ python import_data.py --summary
 - `GET /labours/<id>/history` - Worker attendance history (month-wise)
 - `GET /attendance/date/<date>` - All attendance for a date
 - `POST /attendance` - Mark attendance (single or bulk)
-- `POST /labours` - Add new worker (base_salary optional)
+- `POST /labours` - Add new worker (base_salary, team optional)
 - `GET /projects` - List unique projects
+- `GET /teams` - List selectable teams (models.TEAMS + any ad-hoc values)
 
 **Salary** (`/api/`):
 - `GET /salary` - All salaries with totals

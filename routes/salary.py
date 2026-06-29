@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, send_file, current_app
-from models import db, Salary, Attendance, Worker, compute_pay
+from models import db, Salary, Attendance, Worker, Supervisor, compute_pay
 from routes.attendance import ist_now
 from decimal import Decimal
 from datetime import datetime, date
@@ -358,10 +358,12 @@ def update_worker_salary(worker_id):
     base_salary = data.get('base_salary_per_day')
     designation = data.get('designation')
     name = data.get('name')
+    team = data.get('team')
     monthly_salaried = data.get('monthly_salaried')
 
-    if base_salary is None and designation is None and name is None and monthly_salaried is None:
-        return jsonify({'error': 'At least one field (name, designation, base_salary_per_day, monthly_salaried) is required'}), 400
+    if (base_salary is None and designation is None and name is None
+            and team is None and monthly_salaried is None):
+        return jsonify({'error': 'At least one field (name, designation, team, base_salary_per_day, monthly_salaried) is required'}), 400
 
     worker = Worker.query.get(worker_id)
     if worker is None:
@@ -372,6 +374,10 @@ def update_worker_salary(worker_id):
         worker.name = name
     if designation is not None:
         worker.designation = designation
+    # Team is a pure label on the master — it never re-prices a month and isn't
+    # snapshotted onto salary rows (the app reads team live off the master).
+    if team is not None:
+        worker.team = team
     if base_salary is not None:
         worker.base_salary_per_day = base_salary
     if monthly_salaried is not None:
@@ -497,6 +503,8 @@ def export_salary_report():
     end_date_str = request.args.get('end_date')
     project = request.args.get('project', '').strip()
     worker_id_str = request.args.get('worker_id', '').strip()
+    team = request.args.get('team', '').strip()
+    supervisor_id_str = request.args.get('supervisor_id', '').strip()
 
     # The date range scopes the entire report. The dashboard always supplies it;
     # we only fall back to all-time if it is somehow missing, so a clicked
@@ -519,6 +527,12 @@ def export_salary_report():
         att_query = att_query.filter(Attendance.project == project)
     if worker_id_str.isdigit():
         att_query = att_query.filter(Attendance.worker_id == int(worker_id_str))
+    if supervisor_id_str.isdigit():
+        att_query = att_query.filter(Attendance.supervisor_id == int(supervisor_id_str))
+    # Team lives on the worker master — scope by the worker ids in that team.
+    if team:
+        team_worker_ids = [w.id for w in Worker.query.filter_by(team=team).all()]
+        att_query = att_query.filter(Attendance.worker_id.in_(team_worker_ids or [-1]))
     att_records = att_query.order_by(Attendance.date, Attendance.worker_id).all()
 
     # Worker identity (name / designation / rate / pay model) from the master.
@@ -617,11 +631,16 @@ def export_salary_report():
     # --- Period / filter banner shared by every sheet ---
     period_text = f"Period: {start_date.strftime('%d %b %Y')} – {end_date.strftime('%d %b %Y')}"
     filt = []
+    if team:
+        filt.append(f"Team: {team}")
     if project:
         filt.append(f"Project: {project}")
+    if supervisor_id_str.isdigit():
+        sup = Supervisor.query.get(int(supervisor_id_str))
+        filt.append(f"Supervisor: {sup.name if sup else supervisor_id_str}")
     if worker_id_str.isdigit():
         filt.append(f"Labour: {label(int(worker_id_str))}")
-    filter_text = "   |   ".join(filt) if filt else "All projects & labours"
+    filter_text = "   |   ".join(filt) if filt else "All teams, projects & labours"
 
     wb = Workbook()
     wb.remove(wb.active)  # drop the default empty sheet
@@ -643,6 +662,8 @@ def export_salary_report():
     buffer.seek(0)
 
     parts = ['salary_report', start_date.isoformat(), 'to', end_date.isoformat()]
+    if team:
+        parts.append(team.replace(' ', '_'))
     if project:
         parts.append(project.replace(' ', '_'))
     filename = f"{'_'.join(parts)}.xlsx"

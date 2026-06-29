@@ -31,6 +31,91 @@
         text-decoration: none;
         cursor: pointer;
     }
+
+    /* Summary "Group by" switch + drill-down breakdown cards */
+    .group-by-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        margin: 0.5rem 0 0.75rem;
+        flex-wrap: wrap;
+    }
+    .group-by-label { font-size: 0.85rem; color: var(--text-muted, #6b6b6b); }
+    .group-by-toggle {
+        display: inline-flex;
+        background: var(--surface-soft, #f6f4ee);
+        border: 1px solid var(--border, #e3ded2);
+        border-radius: 999px;
+        padding: 3px;
+        gap: 2px;
+    }
+    .group-by-btn {
+        border: none;
+        background: transparent;
+        padding: 0.35rem 0.85rem;
+        border-radius: 999px;
+        font: inherit;
+        font-size: 0.85rem;
+        color: var(--text-muted, #6b6b6b);
+        cursor: pointer;
+    }
+    .group-by-btn.active {
+        background: var(--surface, #fff);
+        color: var(--text, #2b2b2b);
+        font-weight: 600;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    }
+    .group-breakdown { display: flex; flex-direction: column; gap: 0.5rem; }
+    .group-card {
+        background: var(--surface, #fff);
+        border: 1px solid var(--border, #e3ded2);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    .group-card-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.7rem 0.9rem;
+        cursor: pointer;
+        list-style: none;
+        flex-wrap: wrap;
+    }
+    .group-card-summary::-webkit-details-marker { display: none; }
+    .group-card-summary::before {
+        content: '▸';
+        color: var(--text-muted, #6b6b6b);
+        margin-right: 0.1rem;
+        transition: transform 0.15s;
+    }
+    .group-card[open] .group-card-summary::before { transform: rotate(90deg); }
+    .group-card-name { font-weight: 600; flex: 1; min-width: 0; }
+    .group-card-stats { display: flex; gap: 0.75rem; font-size: 0.82rem; color: var(--text-muted, #6b6b6b); }
+    .gc-stat strong { color: var(--text, #2b2b2b); }
+    .group-members { border-top: 1px solid var(--border, #e3ded2); }
+    .group-member {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.5rem 0.9rem 0.5rem 1.6rem;
+        border-top: 1px solid var(--surface-soft, #f6f4ee);
+        cursor: pointer;
+    }
+    .group-member:first-child { border-top: none; }
+    .gm-name { font-weight: 500; }
+    .gm-role {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        background: var(--surface-soft, #f6f4ee);
+        border: 1px solid var(--border, #e3ded2);
+        border-radius: 6px;
+        padding: 0.05rem 0.4rem;
+        color: var(--text-muted, #6b6b6b);
+    }
+    .gm-meta { margin-left: auto; display: flex; gap: 0.6rem; font-size: 0.8rem; color: var(--text-muted, #6b6b6b); }
+    .gm-ot { color: #b45309; }
 </style>
 <div class="page-container">
     <header class="page-header">
@@ -214,6 +299,17 @@
                         </div>
 
                         <div id="periodSummaryStrip" class="day-summary-strip"></div>
+
+                        <!-- Group-by switch for the breakdown below -->
+                        <div class="group-by-bar">
+                            <span class="group-by-label">Group by</span>
+                            <div class="group-by-toggle" id="groupByToggle">
+                                <button type="button" class="group-by-btn active" data-group="project" onclick="setGroupBy('project')">Project</button>
+                                <button type="button" class="group-by-btn" data-group="supervisor" onclick="setGroupBy('supervisor')">Supervisor</button>
+                                <button type="button" class="group-by-btn" data-group="team" onclick="setGroupBy('team')">Team</button>
+                            </div>
+                        </div>
+
                         <div id="periodBody">
                             <div class="loading">Loading…</div>
                         </div>
@@ -265,6 +361,12 @@
                         <option value="WELDER">WELDER</option>
                         <option value="HELPER">HELPER</option>
                         <option value="RIGGER">RIGGER</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Team</label>
+                    <select id="newTeam">
+                        <option value="">Select team...</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -658,7 +760,58 @@ async function loadPeriod(start, end) {
     }
 }
 
+// Which dimension the breakdown is grouped by: 'project' | 'supervisor' | 'team'.
+let currentGroupBy = 'project';
+// Last summary payload, kept so switching group-by re-renders without refetching.
+let lastPeriodData = null;
+
+const GROUP_LABELS = { project: 'Projects', supervisor: 'Supervisors', team: 'Teams' };
+const GROUP_KEYS = { project: 'projects', supervisor: 'supervisors', team: 'teams' };
+
+function setGroupBy(group) {
+    currentGroupBy = group;
+    document.querySelectorAll('#groupByToggle .group-by-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.group === group));
+    if (lastPeriodData) renderPeriod(lastPeriodData);
+}
+
+// Render the chosen grouping as expandable cards. Each card opens to the present
+// labours in that group, each with their designation (role) — so the Team view
+// answers "who in this team was present, and in what role".
+function renderGroupBreakdown(data) {
+    const groups = data[GROUP_KEYS[currentGroupBy]] || [];
+    if (!groups.length) return '';
+    let html = `<div class="summary-block-title">${GROUP_LABELS[currentGroupBy]}</div><div class="group-breakdown">`;
+    groups.forEach(g => {
+        const members = (g.members || []).map(m => {
+            const role = m.designation ? `<span class="gm-role">${escapeHtml(m.designation)}</span>` : '';
+            const ot = m.ot_hours > 0 ? `<span class="gm-ot">+${m.ot_hours} OT</span>` : '';
+            return `
+                <div class="group-member" onclick="event.stopPropagation(); showHistory(${m.worker_id})">
+                    <span class="gm-name">${escapeHtml(m.name)}</span>
+                    ${role}
+                    <span class="gm-meta"><span class="gm-days">${m.present_days}d present</span>${ot}</span>
+                </div>`;
+        }).join('');
+        html += `
+            <details class="group-card">
+                <summary class="group-card-summary">
+                    <span class="group-card-name">${escapeHtml(g.name)}</span>
+                    <span class="group-card-stats">
+                        <span class="gc-stat"><strong>${g.worker_count}</strong> present</span>
+                        <span class="gc-stat stat-present"><strong>${g.working_days}</strong> days</span>
+                        <span class="gc-stat stat-ot"><strong>${g.ot_hours}</strong> OT hrs</span>
+                    </span>
+                </summary>
+                <div class="group-members">${members}</div>
+            </details>`;
+    });
+    html += `</div>`;
+    return html;
+}
+
 function renderPeriod(data) {
+    lastPeriodData = data;
     document.getElementById('periodSummaryStrip').innerHTML = `
         <span class="dss-item dss-present">${data.total_workers} workers</span>
         <span class="dss-item dss-days">${data.working_days} working days</span>
@@ -690,23 +843,9 @@ function renderPeriod(data) {
         html += `</div>`;
     }
 
-    // Projects
-    if (data.projects && data.projects.length) {
-        html += `<div class="summary-block-title">Projects</div><div class="project-breakdown">`;
-        data.projects.forEach(p => {
-            html += `
-                <div class="project-breakdown-card">
-                    <div class="project-breakdown-name">${escapeHtml(p.name)}</div>
-                    <div class="project-breakdown-stats">
-                        <span class="pb-stat"><strong>${p.worker_count}</strong> workers</span>
-                        <span class="pb-stat stat-present"><strong>${p.working_days}</strong> days</span>
-                        <span class="pb-stat stat-ot"><strong>${p.ot_hours}</strong> OT hrs</span>
-                    </div>
-                </div>
-            `;
-        });
-        html += `</div>`;
-    }
+    // Breakdown for the chosen grouping (project / supervisor / team), with a
+    // drill-down to the present labours and their roles.
+    html += renderGroupBreakdown(data);
 
     // Per-worker summary cards (tap → history). Attendance + activity, no money.
     html += `<div class="summary-block-title">Workers</div><div class="period-workers">`;

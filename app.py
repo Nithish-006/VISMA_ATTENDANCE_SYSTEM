@@ -69,6 +69,17 @@ def run_migrations(app):
                     db.session.commit()
                     app.logger.info("Migration: added worker.monthly_salaried")
 
+                # Team label on the worker master. create_all() adds it to a
+                # fresh `worker` table but never to a pre-existing one, so add it
+                # explicitly. Nullable: existing workers stay team-less until
+                # backfilled (see migrate_teams.py) or set in Worker Pay.
+                if 'team' not in worker_cols:
+                    db.session.execute(text(
+                        'ALTER TABLE worker ADD COLUMN team VARCHAR(50) NULL'
+                    ))
+                    db.session.commit()
+                    app.logger.info("Migration: added worker.team")
+
             # Per-month snapshot of the pay model. Stored on each salary row so a
             # later pay-type change can never rewrite how an earlier month was
             # paid. Backfilled once, right after the column is added: a month is
@@ -164,6 +175,42 @@ def seed_supervisors(app):
             app.logger.error(f"Supervisor seeding failed: {e}")
 
 
+def seed_teams(app):
+    """Backfill worker.team from the canonical roster on startup.
+
+    Mirrors seed_supervisors: runs every boot, idempotent. It ONLY fills workers
+    whose team is still unset (NULL/empty) and whose name exactly matches a
+    roster entry (see team_roster.py). Because it never touches a worker that
+    already has a team, any team set by hand in Worker Pay — or a later manual
+    correction — is preserved across restarts. Workers not in the roster simply
+    stay team-less until assigned in the UI.
+
+    For a bulk re-assignment that OVERWRITES existing teams, use the
+    migrate_teams.py CLI instead.
+    """
+    from models import Worker
+    from team_roster import name_to_team, norm
+
+    with app.app_context():
+        try:
+            lookup = name_to_team()
+            pending = Worker.query.filter(
+                (Worker.team.is_(None)) | (Worker.team == '')
+            ).all()
+            assigned = 0
+            for w in pending:
+                team = lookup.get(norm(w.name))
+                if team:
+                    w.team = team
+                    assigned += 1
+            if assigned:
+                db.session.commit()
+                app.logger.info(f"Seeded team for {assigned} worker(s)")
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Team seeding failed: {e}")
+
+
 def auto_init_database(app):
     """Auto-initialize database with data if empty (for Railway deployment)."""
     from models import Salary, Attendance
@@ -219,6 +266,9 @@ def create_app(config_name=None):
 
     # Ensure the default supervisors exist (populates the Mark dropdown)
     seed_supervisors(app)
+
+    # Backfill worker teams from the canonical roster (only fills unset ones).
+    seed_teams(app)
 
     # Auto-initialize if database is empty (Railway deployment)
     if os.environ.get('FLASK_ENV') == 'production':

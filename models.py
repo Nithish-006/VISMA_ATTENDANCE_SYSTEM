@@ -4,6 +4,12 @@ from datetime import datetime
 
 db = SQLAlchemy()
 
+# Canonical teams a worker can belong to. Single source of truth shared by the
+# Worker.team dropdowns, the /api/teams endpoint and the backfill script, so the
+# three never drift. A worker's team is a label on the master record (like
+# designation); the app slices attendance/salary by it via the worker master.
+TEAMS = ['Rajeeb', 'Visma', 'Ambeth']
+
 
 def _normalize_name(value):
     """Canonical form for a worker name: trimmed and fully upper-cased.
@@ -36,6 +42,9 @@ class Worker(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(100), nullable=False)
     designation = db.Column(db.String(50))
+    # The team this worker belongs to (one of models.TEAMS). A plain label on the
+    # master record — the app filters/groups attendance and salary by it live.
+    team = db.Column(db.String(50))
     base_salary_per_day = db.Column(db.Numeric(10, 2), default=0)
     # Pay model. Daily-rate workers (default) earn overtime at the hourly rate
     # (day-rate / 8). Monthly-salaried workers are paid base_salary_per_day x
@@ -60,6 +69,7 @@ class Worker(db.Model):
             'worker_id': self.id,
             'name': self.name,
             'designation': self.designation,
+            'team': self.team,
             'base_salary_per_day': float(self.base_salary_per_day) if self.base_salary_per_day else 0,
             'monthly_salaried': bool(self.monthly_salaried),
             'active': self.active,

@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models import db, Attendance, Salary, Supervisor, Worker, compute_pay
+from models import db, Attendance, Salary, Supervisor, Worker, compute_pay, TEAMS
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from sqlalchemy import func, case
@@ -72,6 +72,24 @@ def add_supervisor():
     return jsonify(supervisor.to_dict()), 201
 
 
+@attendance_bp.route('/api/teams', methods=['GET'])
+def get_teams():
+    """List selectable teams.
+
+    The canonical TEAMS come first; any ad-hoc team value already on a worker but
+    not in that list is appended, so a team added directly in the DB still shows
+    up in the dropdowns/filters rather than silently disappearing.
+    """
+    extra = db.session.query(Worker.team).distinct().filter(
+        Worker.team.isnot(None), Worker.team != ''
+    ).all()
+    teams = list(TEAMS)
+    for (t,) in extra:
+        if t not in teams:
+            teams.append(t)
+    return jsonify(teams)
+
+
 @attendance_bp.route('/api/attendance/day-roster/<date_str>', methods=['GET'])
 def get_day_roster(date_str):
     """Roster for the Mark Attendance flow.
@@ -126,6 +144,7 @@ def get_labours():
             'worker_id': w.id,
             'name': w.name,
             'designation': w.designation,
+            'team': w.team,
             'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
             'monthly_salaried': bool(w.monthly_salaried),
             'last_attendance': last_att.date.isoformat() if last_att else None
@@ -174,6 +193,7 @@ def get_attendance_by_date(date_str):
             'worker_id': w.id,
             'name': w.name,
             'designation': w.designation,
+            'team': w.team,
             'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
             'attendance': att.to_dict() if att else {
                 'id': None,
@@ -381,6 +401,7 @@ def add_labour():
     name = data.get('name')
     base_salary = data.get('base_salary_per_day', 0)
     designation = data.get('designation')
+    team = data.get('team')
 
     if not name:
         return jsonify({'error': 'name is required'}), 400
@@ -388,6 +409,7 @@ def add_labour():
     worker = Worker(
         name=name,
         designation=designation,
+        team=team,
         base_salary_per_day=base_salary,
         active=True,
     )
@@ -453,6 +475,8 @@ def get_attendance_summary():
     end_date_str = request.args.get('end_date')
     project_filter = request.args.get('project')
     worker_id_filter = request.args.get('worker_id')
+    team_filter = request.args.get('team')
+    supervisor_id_filter = request.args.get('supervisor_id')
 
     if not start_date_str or not end_date_str:
         return jsonify({'error': 'start_date and end_date are required'}), 400
@@ -473,6 +497,12 @@ def get_attendance_summary():
         base_query = base_query.filter(Attendance.project == project_filter)
     if worker_id_filter:
         base_query = base_query.filter(Attendance.worker_id == int(worker_id_filter))
+    if supervisor_id_filter:
+        base_query = base_query.filter(Attendance.supervisor_id == int(supervisor_id_filter))
+    # Team lives on the worker master, so scope by the worker ids in that team.
+    if team_filter:
+        team_worker_ids = [w.id for w in Worker.query.filter_by(team=team_filter).all()]
+        base_query = base_query.filter(Attendance.worker_id.in_(team_worker_ids or [-1]))
 
     records = base_query.all()
 
@@ -485,9 +515,14 @@ def get_attendance_summary():
             worker_info_map[w.id] = {
                 'name': w.name,
                 'designation': w.designation,
+                'team': w.team,
                 'base_salary_per_day': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
                 'monthly_salaried': bool(w.monthly_salaried)
             }
+
+    # Supervisor id -> name, for the supervisor grouping. Whoever marked a
+    # worker-day is its supervisor for breakdown purposes.
+    supervisor_name_map = {s.id: s.name for s in Supervisor.query.all()}
 
     # Per-month rate: the base pay/day that applied in each month is stored on
     # that month's salary row, so a worker raised mid-life keeps the old rate on
@@ -521,8 +556,28 @@ def get_attendance_summary():
         ot_pay = (rate / 8) * ot_hours if paid_ot else 0
         return rate, ot_pay
 
-    # Aggregate by project
+    # Group aggregations. Each maps a group key -> stats including a `members`
+    # dict (worker_id -> {present_days, ot_hours}) for the drill-down. Three
+    # groupings are produced from the same records: project, team and supervisor.
     project_data = {}
+    team_data = {}
+    supervisor_data = {}
+
+    def _add_group(group, key, r, ot, rate, ot_pay):
+        g = group.get(key)
+        if g is None:
+            g = group[key] = {'worker_ids': set(), 'present_dates': set(),
+                              'ot_hours': 0.0, 'labor_cost': 0.0, 'members': {}}
+        g['worker_ids'].add(r.worker_id)
+        g['present_dates'].add(r.date)
+        g['ot_hours'] += ot
+        g['labor_cost'] += rate + ot_pay
+        m = g['members'].get(r.worker_id)
+        if m is None:
+            m = g['members'][r.worker_id] = {'present_days': 0, 'ot_hours': 0.0}
+        m['present_days'] += 1
+        m['ot_hours'] += ot
+
     # Aggregate by date
     daily_data = {}
     # Aggregate by worker
@@ -545,16 +600,16 @@ def get_attendance_summary():
         # (daily-rate workers only).
         rate, ot_pay = day_pay_for(r, ot)
 
-        # Project aggregation - only include present workers
+        # Group aggregations (project / team / supervisor) — present days only.
+        # Labor cost per present-day is the day-rate plus overtime, priced
+        # exactly as the salary report does.
         if r.status == 'P':
-            if proj not in project_data:
-                project_data[proj] = {'worker_ids': set(), 'present_dates': set(), 'ot_hours': 0, 'labor_cost': 0.0}
-            project_data[proj]['worker_ids'].add(r.worker_id)
-            project_data[proj]['present_dates'].add(r.date)
-            project_data[proj]['ot_hours'] += ot
-            # Labor cost for this present-day: the day-rate plus overtime,
-            # priced exactly as the salary report does.
-            project_data[proj]['labor_cost'] += rate + ot_pay
+            winfo = worker_info_map.get(r.worker_id, {})
+            team_key = winfo.get('team') or 'No team'
+            sup_key = supervisor_name_map.get(r.supervisor_id) or 'Unassigned'
+            _add_group(project_data, proj, r, ot, rate, ot_pay)
+            _add_group(team_data, team_key, r, ot, rate, ot_pay)
+            _add_group(supervisor_data, sup_key, r, ot, rate, ot_pay)
             # Track this worker as present
             present_workers.add(r.worker_id)
 
@@ -577,13 +632,16 @@ def get_attendance_summary():
             worker_data[r.worker_id] = {
                 'worker_id': r.worker_id,
                 'name': info.get('name', f'Worker {r.worker_id}'),
+                'designation': info.get('designation'),
+                'team': info.get('team'),
                 'present_days': 0,
                 'absent_days': 0,
                 'ot_hours': 0,
                 'salary': 0.0,
                 'projects': set(),
                 'roles': set(),
-                'works': set()
+                'works': set(),
+                'supervisors': set()
             }
         if r.status == 'P':
             worker_data[r.worker_id]['present_days'] += 1
@@ -599,21 +657,45 @@ def get_attendance_summary():
             worker_data[r.worker_id]['roles'].add(r.role)
         if r.work:
             worker_data[r.worker_id]['works'].add(r.work)
+        sup_name = supervisor_name_map.get(r.supervisor_id)
+        if sup_name:
+            worker_data[r.worker_id]['supervisors'].add(sup_name)
 
         # Activity breakdown counts worker-days of work actually done (present).
         if r.status == 'P' and r.work:
             activity[r.work] = activity.get(r.work, 0) + 1
 
-    # Build response
-    projects_list = []
-    for name, data in sorted(project_data.items()):
-        projects_list.append({
-            'name': name,
-            'worker_count': len(data['worker_ids']),
-            'working_days': len(data['present_dates']),
-            'ot_hours': round(data['ot_hours'], 2),
-            'labor_cost': round(data['labor_cost'], 2)
-        })
+    # Build response. Each grouping (project/team/supervisor) is shaped the same
+    # so the front-end can switch between them and drill into a group's members
+    # (the present labours, each with their designation — for the team view this
+    # answers "who in this team was present, and in what role").
+    def _build_breakdown(group_data):
+        out = []
+        for key, data in sorted(group_data.items()):
+            members = []
+            for wid, m in data['members'].items():
+                info = worker_info_map.get(wid, {})
+                members.append({
+                    'worker_id': wid,
+                    'name': info.get('name', f'Worker {wid}'),
+                    'designation': info.get('designation'),
+                    'present_days': m['present_days'],
+                    'ot_hours': round(m['ot_hours'], 2),
+                })
+            members.sort(key=lambda x: x['name'])
+            out.append({
+                'name': key,
+                'worker_count': len(data['worker_ids']),
+                'working_days': len(data['present_dates']),
+                'ot_hours': round(data['ot_hours'], 2),
+                'labor_cost': round(data['labor_cost'], 2),
+                'members': members,
+            })
+        return out
+
+    projects_list = _build_breakdown(project_data)
+    teams_list = _build_breakdown(team_data)
+    supervisors_list = _build_breakdown(supervisor_data)
 
     daily_list = []
     for date_str in sorted(daily_data.keys()):
@@ -635,13 +717,16 @@ def get_attendance_summary():
         workers_list.append({
             'worker_id': data['worker_id'],
             'name': data['name'],
+            'designation': data['designation'],
+            'team': data['team'],
             'present_days': data['present_days'],
             'absent_days': data['absent_days'],
             'ot_hours': round(data['ot_hours'], 2),
             'salary': salary,
             'projects': sorted(list(data['projects'])),
             'roles': sorted(list(data['roles'])),
-            'works': sorted(list(data['works']))
+            'works': sorted(list(data['works'])),
+            'supervisors': sorted(list(data['supervisors']))
         })
 
     # Working days = unique dates that had at least one Present worker
@@ -660,6 +745,8 @@ def get_attendance_summary():
         'total_ot_hours': round(total_ot_hours, 2),
         'total_salary': round(total_salary, 2),
         'projects': projects_list,
+        'teams': teams_list,
+        'supervisors': supervisors_list,
         'daily_breakdown': daily_list,
         'workers': workers_list,
         'activity_breakdown': activity_breakdown

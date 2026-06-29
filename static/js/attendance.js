@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         btn.addEventListener('click', () => onMarkDayChange(btn));
     });
 
-    await Promise.all([loadSupervisors(), loadWorkers(), loadProjects()]);
+    await Promise.all([loadSupervisors(), loadWorkers(), loadProjects(), loadTeams()]);
 
     document.getElementById('supervisorSelect').addEventListener('change', onSupervisorChange);
     document.getElementById('addSupervisorBtn').addEventListener('click', openSupervisorModal);
@@ -130,6 +130,20 @@ async function loadWorkers() {
     } catch (e) {
         allWorkers = [];
         console.error('Failed to load workers:', e);
+    }
+}
+
+// Populate the Add-Labour modal's Team dropdown from the canonical team list.
+async function loadTeams() {
+    const sel = document.getElementById('newTeam');
+    if (!sel) return;
+    try {
+        const res = await fetch('/api/teams');
+        const teams = await res.json();
+        sel.innerHTML = '<option value="">Select team...</option>' +
+            teams.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+    } catch (e) {
+        console.error('Failed to load teams:', e);
     }
 }
 
@@ -804,6 +818,7 @@ async function addNewLabour(e) {
 
     const name = document.getElementById('newName').value.trim();
     const designation = document.getElementById('newDesignation').value;
+    const team = document.getElementById('newTeam').value;
     const baseSalary = parseFloat(document.getElementById('newSalary').value) || 0;
 
     if (!name) {
@@ -818,6 +833,7 @@ async function addNewLabour(e) {
             body: JSON.stringify({
                 name: name,
                 designation: designation,
+                team: team,
                 base_salary_per_day: baseSalary
             })
         });
