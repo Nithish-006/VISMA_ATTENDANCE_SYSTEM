@@ -40,35 +40,35 @@
         margin: 0.5rem 0 0.75rem;
         flex-wrap: wrap;
     }
-    .group-by-label { font-size: 0.85rem; color: var(--text-muted, #6b6b6b); }
+    .group-by-label { font-size: 0.85rem; color: var(--text-secondary); }
     .group-by-toggle {
         display: inline-flex;
-        background: var(--surface-soft, #f6f4ee);
-        border: 1px solid var(--border, #e3ded2);
+        background: var(--bg-tertiary);
         border-radius: 999px;
-        padding: 3px;
-        gap: 2px;
+        padding: 4px;
+        gap: 4px;
     }
     .group-by-btn {
         border: none;
         background: transparent;
-        padding: 0.35rem 0.85rem;
+        padding: 0.35rem 0.95rem;
         border-radius: 999px;
         font: inherit;
         font-size: 0.85rem;
-        color: var(--text-muted, #6b6b6b);
+        color: var(--text-secondary);
         cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
     }
+    .group-by-btn:hover { color: var(--accent); }
     .group-by-btn.active {
-        background: var(--surface, #fff);
-        color: var(--text, #2b2b2b);
+        background: var(--accent);
+        color: #fff;
         font-weight: 600;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.08);
     }
     .group-breakdown { display: flex; flex-direction: column; gap: 0.5rem; }
     .group-card {
-        background: var(--surface, #fff);
-        border: 1px solid var(--border, #e3ded2);
+        background: var(--bg-primary);
+        border: 1px solid var(--border-light);
         border-radius: 10px;
         overflow: hidden;
     }
@@ -85,37 +85,69 @@
     .group-card-summary::-webkit-details-marker { display: none; }
     .group-card-summary::before {
         content: '▸';
-        color: var(--text-muted, #6b6b6b);
+        color: var(--accent);
         margin-right: 0.1rem;
         transition: transform 0.15s;
     }
     .group-card[open] .group-card-summary::before { transform: rotate(90deg); }
+    .group-card[open] > .group-card-summary { background: var(--accent-light); }
     .group-card-name { font-weight: 600; flex: 1; min-width: 0; }
-    .group-card-stats { display: flex; gap: 0.75rem; font-size: 0.82rem; color: var(--text-muted, #6b6b6b); }
-    .gc-stat strong { color: var(--text, #2b2b2b); }
-    .group-members { border-top: 1px solid var(--border, #e3ded2); }
+    .group-card-stats { display: flex; gap: 0.75rem; font-size: 0.82rem; color: var(--text-secondary); }
+    .gc-stat strong { color: var(--text-primary); }
+    .group-members { border-top: 1px solid var(--border-light); }
     .group-member {
         display: flex;
         align-items: center;
         gap: 0.6rem;
         padding: 0.5rem 0.9rem 0.5rem 1.6rem;
-        border-top: 1px solid var(--surface-soft, #f6f4ee);
+        border-top: 1px solid var(--border-light);
         cursor: pointer;
     }
     .group-member:first-child { border-top: none; }
+    .group-member:hover { background: var(--bg-tertiary); }
     .gm-name { font-weight: 500; }
     .gm-role {
         font-size: 0.72rem;
         text-transform: uppercase;
         letter-spacing: 0.03em;
-        background: var(--surface-soft, #f6f4ee);
-        border: 1px solid var(--border, #e3ded2);
+        background: var(--accent-light);
+        border: 1px solid var(--accent-light);
         border-radius: 6px;
         padding: 0.05rem 0.4rem;
-        color: var(--text-muted, #6b6b6b);
+        color: var(--accent);
     }
-    .gm-meta { margin-left: auto; display: flex; gap: 0.6rem; font-size: 0.8rem; color: var(--text-muted, #6b6b6b); }
-    .gm-ot { color: #b45309; }
+    .gm-meta { margin-left: auto; display: flex; gap: 0.6rem; font-size: 0.8rem; color: var(--text-secondary); }
+    .gm-ot { color: var(--accent); }
+
+    /* Team Overview tab */
+    .team-focus-bar { display: flex; align-items: center; gap: 0.6rem; margin: 0 0 0.85rem; flex-wrap: wrap; }
+    .team-focus-bar .select-input { min-width: 180px; height: 38px; }
+    .team-overview { display: flex; flex-direction: column; gap: 0.85rem; }
+    .team-block {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-light);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .team-block-header {
+        padding: 0.8rem 1rem;
+        border-bottom: 1px solid var(--border-light);
+        background: var(--accent-light);
+    }
+    .team-block-title {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 0.75rem; flex-wrap: wrap;
+    }
+    .team-block-name { font-weight: 700; font-size: 1.02rem; color: var(--text-primary); }
+    .team-block-stats { display: flex; gap: 0.85rem; font-size: 0.82rem; color: var(--text-secondary); }
+    .team-block-stats strong { color: var(--text-primary); }
+    .team-roles { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+    .role-chip {
+        font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em;
+        background: var(--bg-primary); border: 1px solid var(--border-light);
+        border-radius: 999px; padding: 0.1rem 0.55rem; color: var(--text-secondary);
+    }
+    .role-chip strong { color: var(--accent); }
 </style>
 <div class="page-container">
     <header class="page-header">
@@ -265,6 +297,7 @@
                     <div class="summary-mode-toggle" id="summaryModeToggle">
                         <button type="button" class="summary-mode-btn active" data-mode="day" onclick="setSummaryMode('day')">Day</button>
                         <button type="button" class="summary-mode-btn" data-mode="period" onclick="setSummaryMode('period')">Period</button>
+                        <button type="button" class="summary-mode-btn" data-mode="team" onclick="setSummaryMode('team')">Team Overview</button>
                     </div>
 
                     <!-- DAY VIEW -->
@@ -278,6 +311,17 @@
                         </div>
 
                         <div id="daySummaryStrip" class="day-summary-strip"></div>
+
+                        <!-- Group-by switch for the present-worker breakdown below -->
+                        <div class="group-by-bar">
+                            <span class="group-by-label">Group by</span>
+                            <div class="group-by-toggle" id="dayGroupByToggle">
+                                <button type="button" class="group-by-btn active" data-group="project" onclick="setDayGroupBy('project')">Project</button>
+                                <button type="button" class="group-by-btn" data-group="supervisor" onclick="setDayGroupBy('supervisor')">Supervisor</button>
+                                <button type="button" class="group-by-btn" data-group="team" onclick="setDayGroupBy('team')">Team</button>
+                            </div>
+                        </div>
+
                         <div id="dayActivity" class="day-activity">
                             <div class="loading">Loading…</div>
                         </div>
@@ -311,6 +355,33 @@
                         </div>
 
                         <div id="periodBody">
+                            <div class="loading">Loading…</div>
+                        </div>
+                    </section>
+
+                    <!-- TEAM OVERVIEW -->
+                    <section id="summaryTeam" class="summary-view" style="display: none;">
+                        <div class="period-chooser">
+                            <div class="period-quick-chips">
+                                <button type="button" class="quick-filter-pill team-chip active" data-range="week" onclick="setTeamPeriod('week')">This Week</button>
+                                <button type="button" class="quick-filter-pill team-chip" data-range="month" onclick="setTeamPeriod('month')">This Month</button>
+                            </div>
+                            <div class="period-custom">
+                                <input type="date" id="teamStartDate" class="date-input quick-date-picker" title="From" onchange="setTeamPeriod('custom')">
+                                <span class="period-dash">to</span>
+                                <input type="date" id="teamEndDate" class="date-input quick-date-picker" title="To" onchange="setTeamPeriod('custom')">
+                            </div>
+                        </div>
+
+                        <div class="team-focus-bar">
+                            <span class="group-by-label">Team</span>
+                            <select id="teamFocusSelect" class="select-input" onchange="loadTeamOverview()">
+                                <option value="">All teams</option>
+                            </select>
+                        </div>
+
+                        <div id="teamSummaryStrip" class="day-summary-strip"></div>
+                        <div id="teamBody">
                             <div class="loading">Loading…</div>
                         </div>
                     </section>
@@ -442,6 +513,7 @@ function showPanel(panel) {
 
         if (!window.summaryLoaded) {
             window.periodLoaded = false;
+            window.teamLoaded = false;
             setSummaryMode('day');
             setDay('today');
             window.summaryLoaded = true;
@@ -561,10 +633,15 @@ function setSummaryMode(mode) {
         b.classList.toggle('active', b.dataset.mode === mode));
     document.getElementById('summaryDay').style.display = mode === 'day' ? 'block' : 'none';
     document.getElementById('summaryPeriod').style.display = mode === 'period' ? 'block' : 'none';
-    // Lazy-load the period view the first time it's opened.
+    document.getElementById('summaryTeam').style.display = mode === 'team' ? 'block' : 'none';
+    // Lazy-load each view the first time it's opened.
     if (mode === 'period' && !window.periodLoaded) {
         setPeriod('week');
         window.periodLoaded = true;
+    }
+    if (mode === 'team' && !window.teamLoaded) {
+        initTeamOverview();
+        window.teamLoaded = true;
     }
 }
 
@@ -609,6 +686,40 @@ function round1(n) { return Math.round((n || 0) * 10) / 10; }
 
 // ---------- DAY VIEW ----------
 
+// Which dimension the day breakdown is grouped by: 'project'|'supervisor'|'team'.
+let dayGroupBy = 'project';
+// Last day rows, kept so switching group-by re-renders without refetching.
+let lastDayRows = null;
+// supervisor_id -> name, loaded once (the day records only carry the id).
+let supervisorNameMap = null;
+
+async function ensureSupervisorNames() {
+    if (supervisorNameMap) return;
+    supervisorNameMap = {};
+    try {
+        const res = await fetch('/api/supervisors');
+        (await res.json()).forEach(s => { supervisorNameMap[s.id] = s.name; });
+    } catch (e) {
+        console.error('Failed to load supervisors:', e);
+    }
+}
+
+function setDayGroupBy(group) {
+    dayGroupBy = group;
+    document.querySelectorAll('#dayGroupByToggle .group-by-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.group === group));
+    if (lastDayRows) renderDay(lastDayRows);
+}
+
+// The group key for one present row, per the chosen dimension. "No …"/Unassigned
+// buckets sort last (see renderDay).
+function dayGroupKeyFor(r) {
+    if (dayGroupBy === 'team') return r.team || 'No team';
+    if (dayGroupBy === 'supervisor')
+        return (supervisorNameMap && supervisorNameMap[r.attendance.supervisor_id]) || 'Unassigned';
+    return r.attendance.project || 'No project';
+}
+
 function setDay(which) {
     let dateStr;
     if (which === 'today') dateStr = isoDaysAgo(0);
@@ -633,7 +744,11 @@ async function loadDay(dateStr) {
     activity.innerHTML = '<div class="loading">Loading…</div>';
 
     try {
-        const res = await fetch(`/api/attendance/date/${dateStr}`);
+        // Supervisor names are needed for the "Group by supervisor" option.
+        const [res] = await Promise.all([
+            fetch(`/api/attendance/date/${dateStr}`),
+            ensureSupervisorNames(),
+        ]);
         const rows = await res.json();
         renderDay(rows);
     } catch (e) {
@@ -643,6 +758,7 @@ async function loadDay(dateStr) {
 }
 
 function renderDay(rows) {
+    lastDayRows = rows;
     // Present = explicitly marked Present. Absent = explicitly marked Absent
     // (a real record); never-marked workers carry a synthesised id:null default
     // and are ignored so the absent count stays meaningful.
@@ -660,21 +776,23 @@ function renderDay(rows) {
     if (present.length === 0) {
         activityEl.innerHTML = '<div class="empty-state">No one marked present on this day.</div>';
     } else {
+        // Group present workers by the chosen dimension (project/supervisor/team).
         const groups = {};
         present.forEach(r => {
-            const proj = r.attendance.project || 'No project';
-            (groups[proj] = groups[proj] || []).push(r);
+            const key = dayGroupKeyFor(r);
+            (groups[key] = groups[key] || []).push(r);
         });
-        const projectNames = Object.keys(groups).sort((a, b) => {
-            if (a === 'No project') return 1;
-            if (b === 'No project') return -1;
+        // Real groups alphabetical; the catch-all bucket ("No …"/Unassigned) last.
+        const isCatchAll = k => k === 'No project' || k === 'No team' || k === 'Unassigned';
+        const keys = Object.keys(groups).sort((a, b) => {
+            if (isCatchAll(a) !== isCatchAll(b)) return isCatchAll(a) ? 1 : -1;
             return a.localeCompare(b);
         });
-        activityEl.innerHTML = projectNames.map(proj => {
-            const members = groups[proj].sort((a, b) => a.name.localeCompare(b.name));
+        activityEl.innerHTML = keys.map(key => {
+            const members = groups[key].sort((a, b) => a.name.localeCompare(b.name));
             return `
                 <div class="day-project-group">
-                    <div class="day-project-title">${escapeHtml(proj)} <span class="count">(${members.length})</span></div>
+                    <div class="day-project-title">${escapeHtml(key)} <span class="count">(${members.length})</span></div>
                     <div class="marked-list">${members.map(dayRow).join('')}</div>
                 </div>
             `;
@@ -869,6 +987,134 @@ function renderPeriod(data) {
     html += `</div>`;
 
     body.innerHTML = html;
+}
+
+// ---------- TEAM OVERVIEW ----------
+
+// First open: populate the team focus dropdown, then load the current week.
+async function initTeamOverview() {
+    await ensureTeamFocusOptions();
+    setTeamPeriod('week');
+}
+
+async function ensureTeamFocusOptions() {
+    const sel = document.getElementById('teamFocusSelect');
+    if (sel.dataset.loaded) return;
+    try {
+        const teams = await (await fetch('/api/teams')).json();
+        sel.innerHTML = '<option value="">All teams</option>' +
+            teams.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+        sel.dataset.loaded = '1';
+    } catch (e) {
+        console.error('Failed to load teams:', e);
+    }
+}
+
+// Same date logic as the Period view, but drives the Team Overview range inputs.
+function setTeamPeriod(range) {
+    let start, end;
+    const today = istToday();
+    if (range === 'week') {
+        const day = today.getDay();
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        start = isoDate(monday);
+        end = isoDate(sunday);
+    } else if (range === 'month') {
+        start = isoDate(new Date(today.getFullYear(), today.getMonth(), 1));
+        end = isoDate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+    } else {  // custom — driven by the two date inputs
+        start = document.getElementById('teamStartDate').value;
+        end = document.getElementById('teamEndDate').value;
+        if (!start || !end) return;
+    }
+
+    document.querySelectorAll('#summaryTeam .team-chip').forEach(c =>
+        c.classList.toggle('active', c.dataset.range === range));
+    document.getElementById('teamStartDate').value = start;
+    document.getElementById('teamEndDate').value = end;
+    loadTeamOverview();
+}
+
+async function loadTeamOverview() {
+    const start = document.getElementById('teamStartDate').value;
+    const end = document.getElementById('teamEndDate').value;
+    const focus = document.getElementById('teamFocusSelect').value;
+    if (!start || !end) return;
+
+    document.getElementById('teamSummaryStrip').innerHTML = '';
+    const body = document.getElementById('teamBody');
+    body.innerHTML = '<div class="loading">Loading…</div>';
+
+    try {
+        let url = `/api/attendance/summary?start_date=${start}&end_date=${end}`;
+        if (focus) url += `&team=${encodeURIComponent(focus)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!res.ok) {
+            body.innerHTML = `<div class="error">${data.error || 'Error loading.'}</div>`;
+            return;
+        }
+        renderTeamOverview(data);
+    } catch (e) {
+        body.innerHTML = '<div class="error">Error loading team overview.</div>';
+        console.error(e);
+    }
+}
+
+function renderTeamOverview(data) {
+    const teams = data.teams || [];
+    document.getElementById('teamSummaryStrip').innerHTML = `
+        <span class="dss-item dss-present">${teams.length} team${teams.length === 1 ? '' : 's'}</span>
+        <span class="dss-item dss-days">${data.total_workers} present</span>
+        <span class="dss-item dss-ot">${data.total_ot_hours} OT hrs</span>
+    `;
+
+    const body = document.getElementById('teamBody');
+    if (!teams.length) {
+        body.innerHTML = '<div class="empty-state">No attendance for the selected team(s) in this period.</div>';
+        return;
+    }
+
+    body.innerHTML = '<div class="team-overview">' + teams.map(t => {
+        // Tally present labours by designation (role) for an at-a-glance mix.
+        const roles = {};
+        (t.members || []).forEach(m => {
+            const d = m.designation || 'No role';
+            roles[d] = (roles[d] || 0) + 1;
+        });
+        const roleChips = Object.keys(roles).sort().map(d =>
+            `<span class="role-chip">${escapeHtml(d)} <strong>${roles[d]}</strong></span>`).join('');
+
+        const members = (t.members || []).map(m => {
+            const role = m.designation ? `<span class="gm-role">${escapeHtml(m.designation)}</span>` : '';
+            const ot = m.ot_hours > 0 ? `<span class="gm-ot">+${m.ot_hours} OT</span>` : '';
+            return `
+                <div class="group-member" onclick="showHistory(${m.worker_id})">
+                    <span class="gm-name">${escapeHtml(m.name)}</span>
+                    ${role}
+                    <span class="gm-meta"><span class="gm-days">${m.present_days}d present</span>${ot}</span>
+                </div>`;
+        }).join('');
+
+        return `
+            <div class="team-block">
+                <div class="team-block-header">
+                    <div class="team-block-title">
+                        <span class="team-block-name">${escapeHtml(t.name)}</span>
+                        <span class="team-block-stats">
+                            <span><strong>${t.worker_count}</strong> present</span>
+                            <span><strong>${t.working_days}</strong> days</span>
+                            <span><strong>${t.ot_hours}</strong> OT hrs</span>
+                        </span>
+                    </div>
+                    ${roleChips ? `<div class="team-roles">${roleChips}</div>` : ''}
+                </div>
+                <div class="team-members">${members}</div>
+            </div>`;
+    }).join('') + '</div>';
 }
 
 function formatDate(dateStr) {

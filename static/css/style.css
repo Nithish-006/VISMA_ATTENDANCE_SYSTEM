@@ -2010,7 +2010,8 @@ tr.total-row td {
 }
 
 .day-chip,
-.period-chip {
+.period-chip,
+.team-chip {
     background: var(--bg-primary);
     border: 1px solid var(--border-medium);
     color: var(--text-secondary);
@@ -2018,7 +2019,8 @@ tr.total-row td {
 }
 
 .day-chip.active,
-.period-chip.active {
+.period-chip.active,
+.team-chip.active {
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
