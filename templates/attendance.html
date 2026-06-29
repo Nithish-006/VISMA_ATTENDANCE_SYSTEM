@@ -119,35 +119,62 @@
     .gm-meta { margin-left: auto; display: flex; gap: 0.6rem; font-size: 0.8rem; color: var(--text-secondary); }
     .gm-ot { color: var(--accent); }
 
-    /* Team Overview tab */
-    .team-focus-bar { display: flex; align-items: center; gap: 0.6rem; margin: 0 0 0.85rem; flex-wrap: wrap; }
-    .team-focus-bar .select-input { min-width: 180px; height: 38px; }
-    .team-overview { display: flex; flex-direction: column; gap: 0.85rem; }
-    .team-block {
+    /* Current Workers — heads per team, split by designation */
+    .summary-current { display: flex; flex-direction: column; gap: 0.85rem; }
+    .asof-label { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); }
+
+    /* "As of" pills mirror the period chips (filled when active). */
+    .current-chip {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-medium);
+        color: var(--text-secondary);
+        cursor: pointer;
+    }
+    .current-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .current-team {
         background: var(--bg-primary);
         border: 1px solid var(--border-light);
         border-radius: 12px;
         overflow: hidden;
     }
-    .team-block-header {
-        padding: 0.8rem 1rem;
-        border-bottom: 1px solid var(--border-light);
+    .current-team-summary {
+        display: block;
+        padding: 0.85rem 1rem;
+        cursor: pointer;
+        list-style: none;
         background: var(--accent-light);
     }
-    .team-block-title {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 0.75rem; flex-wrap: wrap;
+    .current-team-summary::-webkit-details-marker { display: none; }
+    .current-team-head { display: flex; align-items: center; gap: 0.6rem; }
+    .current-team-head::before {
+        content: '▸';
+        color: var(--accent);
+        flex-shrink: 0;
+        transition: transform 0.15s;
     }
-    .team-block-name { font-weight: 700; font-size: 1.02rem; color: var(--text-primary); }
-    .team-block-stats { display: flex; gap: 0.85rem; font-size: 0.82rem; color: var(--text-secondary); }
-    .team-block-stats strong { color: var(--text-primary); }
-    .team-roles { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-    .role-chip {
-        font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em;
-        background: var(--bg-primary); border: 1px solid var(--border-light);
-        border-radius: 999px; padding: 0.1rem 0.55rem; color: var(--text-secondary);
+    .current-team[open] .current-team-head::before { transform: rotate(90deg); }
+    .team-block-name { flex: 1; font-weight: 700; font-size: 1.02rem; color: var(--text-primary); }
+    .team-head-count { font-size: 0.82rem; color: var(--text-secondary); white-space: nowrap; }
+    .team-head-count strong { color: var(--accent); font-size: 0.98rem; }
+
+    .current-role-bars { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.7rem; }
+
+    .current-members {
+        display: flex; flex-wrap: wrap; gap: 0.5rem;
+        padding: 0.85rem 1rem;
+        border-top: 1px solid var(--border-light);
     }
-    .role-chip strong { color: var(--accent); }
+    .current-member {
+        display: inline-flex; align-items: center; gap: 0.5rem;
+        background: var(--bg-tertiary);
+        border-radius: 999px;
+        padding: 0.3rem 0.35rem 0.3rem 0.75rem;
+    }
+
+    /* Date range is a desktop-only refinement; phones use the quick pills alone. */
+    .desktop-range { display: none; }
+    @media (min-width: 1024px) { .desktop-range { display: flex; } }
 </style>
 <div class="page-container">
     <header class="page-header">
@@ -293,49 +320,24 @@
             <!-- Panel 2: Summary -->
             <div id="panelSummary" class="panel">
                 <main class="main-content">
-                    <!-- Day / Period mode toggle -->
+                    <!-- Attendance / Current Workers mode toggle -->
                     <div class="summary-mode-toggle" id="summaryModeToggle">
-                        <button type="button" class="summary-mode-btn active" data-mode="day" onclick="setSummaryMode('day')">Day</button>
-                        <button type="button" class="summary-mode-btn" data-mode="period" onclick="setSummaryMode('period')">Period</button>
-                        <button type="button" class="summary-mode-btn" data-mode="team" onclick="setSummaryMode('team')">Team Overview</button>
+                        <button type="button" class="summary-mode-btn active" data-mode="current" onclick="setSummaryMode('current')">Workers</button>
+                        <button type="button" class="summary-mode-btn" data-mode="attendance" onclick="setSummaryMode('attendance')">Attendance</button>
                     </div>
 
-                    <!-- DAY VIEW -->
-                    <section id="summaryDay" class="summary-view">
-                        <div class="day-chooser">
-                            <div class="day-quick-chips">
-                                <button type="button" class="quick-filter-pill day-chip active" data-day="today" onclick="setDay('today')">Today</button>
-                                <button type="button" class="quick-filter-pill day-chip" data-day="yesterday" onclick="setDay('yesterday')">Yesterday</button>
-                            </div>
-                            <input type="date" id="dayDatePicker" class="date-input quick-date-picker" onchange="setDay(this.value)" title="Pick a date">
-                        </div>
-
-                        <div id="daySummaryStrip" class="day-summary-strip"></div>
-
-                        <!-- Group-by switch for the present-worker breakdown below -->
-                        <div class="group-by-bar">
-                            <span class="group-by-label">Group by</span>
-                            <div class="group-by-toggle" id="dayGroupByToggle">
-                                <button type="button" class="group-by-btn active" data-group="project" onclick="setDayGroupBy('project')">Project</button>
-                                <button type="button" class="group-by-btn" data-group="supervisor" onclick="setDayGroupBy('supervisor')">Supervisor</button>
-                                <button type="button" class="group-by-btn" data-group="team" onclick="setDayGroupBy('team')">Team</button>
-                            </div>
-                        </div>
-
-                        <div id="dayActivity" class="day-activity">
-                            <div class="loading">Loading…</div>
-                        </div>
-                        <div id="dayAbsent" class="day-absent"></div>
-                    </section>
-
-                    <!-- PERIOD VIEW -->
-                    <section id="summaryPeriod" class="summary-view" style="display: none;">
+                    <!-- ATTENDANCE VIEW -->
+                    <section id="summaryAttendance" class="summary-view" style="display: none;">
                         <div class="period-chooser">
                             <div class="period-quick-chips">
-                                <button type="button" class="quick-filter-pill period-chip active" data-range="week" onclick="setPeriod('week')">This Week</button>
+                                <button type="button" class="quick-filter-pill period-chip active" data-range="today" onclick="setPeriod('today')">Today</button>
+                                <button type="button" class="quick-filter-pill period-chip" data-range="yesterday" onclick="setPeriod('yesterday')">Yesterday</button>
+                                <button type="button" class="quick-filter-pill period-chip" data-range="week" onclick="setPeriod('week')">This Week</button>
                                 <button type="button" class="quick-filter-pill period-chip" data-range="month" onclick="setPeriod('month')">This Month</button>
+                                <button type="button" class="quick-filter-pill period-chip hide-on-mobile" data-range="lastmonth" onclick="setPeriod('lastmonth')">Last Month</button>
                             </div>
-                            <div class="period-custom">
+                            <!-- Date range is a desktop-only refinement (hidden on phones). -->
+                            <div class="period-custom desktop-range">
                                 <input type="date" id="periodStartDate" class="date-input quick-date-picker" title="From" onchange="setPeriod('custom')">
                                 <span class="period-dash">to</span>
                                 <input type="date" id="periodEndDate" class="date-input quick-date-picker" title="To" onchange="setPeriod('custom')">
@@ -359,29 +361,19 @@
                         </div>
                     </section>
 
-                    <!-- TEAM OVERVIEW -->
-                    <section id="summaryTeam" class="summary-view" style="display: none;">
+                    <!-- CURRENT WORKERS VIEW -->
+                    <section id="summaryCurrent" class="summary-view">
                         <div class="period-chooser">
+                            <span class="asof-label">As of</span>
                             <div class="period-quick-chips">
-                                <button type="button" class="quick-filter-pill team-chip active" data-range="week" onclick="setTeamPeriod('week')">This Week</button>
-                                <button type="button" class="quick-filter-pill team-chip" data-range="month" onclick="setTeamPeriod('month')">This Month</button>
-                            </div>
-                            <div class="period-custom">
-                                <input type="date" id="teamStartDate" class="date-input quick-date-picker" title="From" onchange="setTeamPeriod('custom')">
-                                <span class="period-dash">to</span>
-                                <input type="date" id="teamEndDate" class="date-input quick-date-picker" title="To" onchange="setTeamPeriod('custom')">
+                                <button type="button" class="quick-filter-pill current-chip active" data-range="today" onclick="setCurrentPeriod('today')">Today</button>
+                                <button type="button" class="quick-filter-pill current-chip" data-range="week" onclick="setCurrentPeriod('week')">This Week</button>
+                                <button type="button" class="quick-filter-pill current-chip" data-range="month" onclick="setCurrentPeriod('month')">This Month</button>
                             </div>
                         </div>
 
-                        <div class="team-focus-bar">
-                            <span class="group-by-label">Team</span>
-                            <select id="teamFocusSelect" class="select-input" onchange="loadTeamOverview()">
-                                <option value="">All teams</option>
-                            </select>
-                        </div>
-
-                        <div id="teamSummaryStrip" class="day-summary-strip"></div>
-                        <div id="teamBody">
+                        <div id="currentSummaryStrip" class="day-summary-strip"></div>
+                        <div id="currentBody" class="summary-current">
                             <div class="loading">Loading…</div>
                         </div>
                     </section>
@@ -512,10 +504,9 @@ function showPanel(panel) {
         markControls.style.display = 'none';
 
         if (!window.summaryLoaded) {
-            window.periodLoaded = false;
-            window.teamLoaded = false;
-            setSummaryMode('day');
-            setDay('today');
+            window.attendanceLoaded = false;
+            setSummaryMode('current');
+            setCurrentPeriod('today');
             window.summaryLoaded = true;
         }
     }
@@ -622,26 +613,21 @@ document.getElementById('historyModal').addEventListener('click', function(e) {
 });
 
 // ============================================
-// ATTENDANCE SUMMARY  (Day + Period views)
+// ATTENDANCE SUMMARY  (Attendance + Current Workers)
 // ============================================
 
-let summaryMode = 'day';
+let summaryMode = 'current';
 
 function setSummaryMode(mode) {
     summaryMode = mode;
     document.querySelectorAll('#summaryModeToggle .summary-mode-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.mode === mode));
-    document.getElementById('summaryDay').style.display = mode === 'day' ? 'block' : 'none';
-    document.getElementById('summaryPeriod').style.display = mode === 'period' ? 'block' : 'none';
-    document.getElementById('summaryTeam').style.display = mode === 'team' ? 'block' : 'none';
-    // Lazy-load each view the first time it's opened.
-    if (mode === 'period' && !window.periodLoaded) {
-        setPeriod('week');
-        window.periodLoaded = true;
-    }
-    if (mode === 'team' && !window.teamLoaded) {
-        initTeamOverview();
-        window.teamLoaded = true;
+    document.getElementById('summaryAttendance').style.display = mode === 'attendance' ? 'block' : 'none';
+    document.getElementById('summaryCurrent').style.display = mode === 'current' ? 'block' : 'none';
+    // Lazy-load the Attendance Summary view the first time it's opened.
+    if (mode === 'attendance' && !window.attendanceLoaded) {
+        setPeriod('today');
+        window.attendanceLoaded = true;
     }
 }
 
@@ -674,168 +660,21 @@ function isoDate(d) {
     return `${y}-${m}-${day}`;
 }
 
-// YYYY-MM-DD for `n` days ago in IST — matches how the Mark flow derives dates
-// (attendance.js isoForDaysAgo), so "Today" here lines up with what was saved.
-function isoDaysAgo(n) {
-    const d = istToday();
-    d.setDate(d.getDate() - n);
-    return isoDate(d);
-}
-
-function round1(n) { return Math.round((n || 0) * 10) / 10; }
-
-// ---------- DAY VIEW ----------
-
-// Which dimension the day breakdown is grouped by: 'project'|'supervisor'|'team'.
-let dayGroupBy = 'project';
-// Last day rows, kept so switching group-by re-renders without refetching.
-let lastDayRows = null;
-// supervisor_id -> name, loaded once (the day records only carry the id).
-let supervisorNameMap = null;
-
-async function ensureSupervisorNames() {
-    if (supervisorNameMap) return;
-    supervisorNameMap = {};
-    try {
-        const res = await fetch('/api/supervisors');
-        (await res.json()).forEach(s => { supervisorNameMap[s.id] = s.name; });
-    } catch (e) {
-        console.error('Failed to load supervisors:', e);
-    }
-}
-
-function setDayGroupBy(group) {
-    dayGroupBy = group;
-    document.querySelectorAll('#dayGroupByToggle .group-by-btn').forEach(b =>
-        b.classList.toggle('active', b.dataset.group === group));
-    if (lastDayRows) renderDay(lastDayRows);
-}
-
-// The group key for one present row, per the chosen dimension. "No …"/Unassigned
-// buckets sort last (see renderDay).
-function dayGroupKeyFor(r) {
-    if (dayGroupBy === 'team') return r.team || 'No team';
-    if (dayGroupBy === 'supervisor')
-        return (supervisorNameMap && supervisorNameMap[r.attendance.supervisor_id]) || 'Unassigned';
-    return r.attendance.project || 'No project';
-}
-
-function setDay(which) {
-    let dateStr;
-    if (which === 'today') dateStr = isoDaysAgo(0);
-    else if (which === 'yesterday') dateStr = isoDaysAgo(1);
-    else dateStr = which;  // a value from the date picker
-    if (!dateStr) return;
-
-    const today = isoDaysAgo(0), yesterday = isoDaysAgo(1);
-    document.querySelectorAll('#summaryDay .day-chip').forEach(c => {
-        const v = c.dataset.day;
-        c.classList.toggle('active',
-            (v === 'today' && dateStr === today) || (v === 'yesterday' && dateStr === yesterday));
-    });
-    document.getElementById('dayDatePicker').value = dateStr;
-    loadDay(dateStr);
-}
-
-async function loadDay(dateStr) {
-    const activity = document.getElementById('dayActivity');
-    document.getElementById('daySummaryStrip').innerHTML = '';
-    document.getElementById('dayAbsent').innerHTML = '';
-    activity.innerHTML = '<div class="loading">Loading…</div>';
-
-    try {
-        // Supervisor names are needed for the "Group by supervisor" option.
-        const [res] = await Promise.all([
-            fetch(`/api/attendance/date/${dateStr}`),
-            ensureSupervisorNames(),
-        ]);
-        const rows = await res.json();
-        renderDay(rows);
-    } catch (e) {
-        activity.innerHTML = '<div class="error">Could not load attendance.</div>';
-        console.error(e);
-    }
-}
-
-function renderDay(rows) {
-    lastDayRows = rows;
-    // Present = explicitly marked Present. Absent = explicitly marked Absent
-    // (a real record); never-marked workers carry a synthesised id:null default
-    // and are ignored so the absent count stays meaningful.
-    const present = rows.filter(r => r.attendance && r.attendance.status === 'P');
-    const absent = rows.filter(r => r.attendance && r.attendance.status === 'A' && r.attendance.id != null);
-    const totalOT = present.reduce((s, r) => s + (parseFloat(r.attendance.ot_hours) || 0), 0);
-
-    document.getElementById('daySummaryStrip').innerHTML = `
-        <span class="dss-item dss-present">${present.length} present</span>
-        <span class="dss-item dss-absent">${absent.length} absent</span>
-        <span class="dss-item dss-ot">${round1(totalOT)} OT hrs</span>
-    `;
-
-    const activityEl = document.getElementById('dayActivity');
-    if (present.length === 0) {
-        activityEl.innerHTML = '<div class="empty-state">No one marked present on this day.</div>';
-    } else {
-        // Group present workers by the chosen dimension (project/supervisor/team).
-        const groups = {};
-        present.forEach(r => {
-            const key = dayGroupKeyFor(r);
-            (groups[key] = groups[key] || []).push(r);
-        });
-        // Real groups alphabetical; the catch-all bucket ("No …"/Unassigned) last.
-        const isCatchAll = k => k === 'No project' || k === 'No team' || k === 'Unassigned';
-        const keys = Object.keys(groups).sort((a, b) => {
-            if (isCatchAll(a) !== isCatchAll(b)) return isCatchAll(a) ? 1 : -1;
-            return a.localeCompare(b);
-        });
-        activityEl.innerHTML = keys.map(key => {
-            const members = groups[key].sort((a, b) => a.name.localeCompare(b.name));
-            return `
-                <div class="day-project-group">
-                    <div class="day-project-title">${escapeHtml(key)} <span class="count">(${members.length})</span></div>
-                    <div class="marked-list">${members.map(dayRow).join('')}</div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    const absentEl = document.getElementById('dayAbsent');
-    if (absent.length > 0) {
-        const names = absent.sort((a, b) => a.name.localeCompare(b.name))
-            .map(r => `<span class="absent-name">${escapeHtml(r.name)}</span>`).join('');
-        absentEl.innerHTML = `
-            <details class="absent-details">
-                <summary>Absent <span class="count">(${absent.length})</span></summary>
-                <div class="absent-names">${names}</div>
-            </details>
-        `;
-    }
-}
-
-function dayRow(r) {
-    const a = r.attendance;
-    const role = a.role || '—';
-    const work = a.work ? ' · ' + escapeHtml(a.work) : '';
-    const ot = (parseFloat(a.ot_hours) || 0) > 0 ? `+${a.ot_hours} OT` : 'No OT';
-    return `
-        <div class="marked-row" onclick="showHistory(${r.worker_id})">
-            <div class="mr-main">
-                <span class="mr-name">${escapeHtml(r.name)}</span>
-                <span class="mr-role">${escapeHtml(role)}${work}</span>
-            </div>
-            <div class="mr-meta">
-                <span class="mr-ot">${ot}</span>
-            </div>
-        </div>
-    `;
-}
-
-// ---------- PERIOD VIEW ----------
+// ---------- ATTENDANCE VIEW ----------
+// Reckons a date range from the quick pills (or, on desktop, the date inputs)
+// and renders the same aggregated breakdown for it. Single-day pills (Today /
+// Yesterday) just collapse start === end.
 
 function setPeriod(range) {
     let start, end;
     const today = istToday();
-    if (range === 'week') {
+    if (range === 'today') {
+        start = end = isoDate(today);
+    } else if (range === 'yesterday') {
+        const y = new Date(today);
+        y.setDate(today.getDate() - 1);
+        start = end = isoDate(y);
+    } else if (range === 'week') {
         const day = today.getDay();
         const monday = new Date(today);
         monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
@@ -846,13 +685,16 @@ function setPeriod(range) {
     } else if (range === 'month') {
         start = isoDate(new Date(today.getFullYear(), today.getMonth(), 1));
         end = isoDate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+    } else if (range === 'lastmonth') {
+        start = isoDate(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+        end = isoDate(new Date(today.getFullYear(), today.getMonth(), 0));
     } else {  // custom — driven by the two date inputs
         start = document.getElementById('periodStartDate').value;
         end = document.getElementById('periodEndDate').value;
         if (!start || !end) return;  // wait until both are set
     }
 
-    document.querySelectorAll('#summaryPeriod .period-chip').forEach(c =>
+    document.querySelectorAll('#summaryAttendance .period-chip').forEach(c =>
         c.classList.toggle('active', c.dataset.range === range));
     document.getElementById('periodStartDate').value = start;
     document.getElementById('periodEndDate').value = end;
@@ -989,138 +831,107 @@ function renderPeriod(data) {
     body.innerHTML = html;
 }
 
-// ---------- TEAM OVERVIEW ----------
+// ---------- CURRENT WORKERS ----------
+// A snapshot of who is actually in the factory, grouped by team and split by
+// designation. "Heads" = the distinct workers present in the chosen window
+// (Today / This week / This month) — a worker who has left simply stops showing
+// up. Reuses the attendance summary endpoint, whose team breakdown already
+// carries each present worker with their designation.
 
-// First open: populate the team focus dropdown, then load the current week.
-async function initTeamOverview() {
-    await ensureTeamFocusOptions();
-    setTeamPeriod('week');
-}
+let lastCurrentData = null;
 
-async function ensureTeamFocusOptions() {
-    const sel = document.getElementById('teamFocusSelect');
-    if (sel.dataset.loaded) return;
-    try {
-        const teams = await (await fetch('/api/teams')).json();
-        sel.innerHTML = '<option value="">All teams</option>' +
-            teams.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
-        sel.dataset.loaded = '1';
-    } catch (e) {
-        console.error('Failed to load teams:', e);
-    }
-}
-
-// Same date logic as the Period view, but drives the Team Overview range inputs.
-function setTeamPeriod(range) {
+function setCurrentPeriod(range) {
     let start, end;
     const today = istToday();
     if (range === 'week') {
         const day = today.getDay();
         const monday = new Date(today);
         monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
-        const sunday = new Date(monday);
-        sunday.setDate(monday.getDate() + 6);
         start = isoDate(monday);
-        end = isoDate(sunday);
+        end = isoDate(today);
     } else if (range === 'month') {
         start = isoDate(new Date(today.getFullYear(), today.getMonth(), 1));
-        end = isoDate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
-    } else {  // custom — driven by the two date inputs
-        start = document.getElementById('teamStartDate').value;
-        end = document.getElementById('teamEndDate').value;
-        if (!start || !end) return;
+        end = isoDate(today);
+    } else {  // today
+        start = end = isoDate(today);
     }
 
-    document.querySelectorAll('#summaryTeam .team-chip').forEach(c =>
+    document.querySelectorAll('#summaryCurrent .current-chip').forEach(c =>
         c.classList.toggle('active', c.dataset.range === range));
-    document.getElementById('teamStartDate').value = start;
-    document.getElementById('teamEndDate').value = end;
-    loadTeamOverview();
+    loadCurrent(start, end);
 }
 
-async function loadTeamOverview() {
-    const start = document.getElementById('teamStartDate').value;
-    const end = document.getElementById('teamEndDate').value;
-    const focus = document.getElementById('teamFocusSelect').value;
-    if (!start || !end) return;
-
-    document.getElementById('teamSummaryStrip').innerHTML = '';
-    const body = document.getElementById('teamBody');
+async function loadCurrent(start, end) {
+    document.getElementById('currentSummaryStrip').innerHTML = '';
+    const body = document.getElementById('currentBody');
     body.innerHTML = '<div class="loading">Loading…</div>';
 
     try {
-        let url = `/api/attendance/summary?start_date=${start}&end_date=${end}`;
-        if (focus) url += `&team=${encodeURIComponent(focus)}`;
-        const res = await fetch(url);
+        const res = await fetch(`/api/attendance/summary?start_date=${start}&end_date=${end}`);
         const data = await res.json();
         if (!res.ok) {
             body.innerHTML = `<div class="error">${data.error || 'Error loading.'}</div>`;
             return;
         }
-        renderTeamOverview(data);
+        renderCurrent(data);
     } catch (e) {
-        body.innerHTML = '<div class="error">Error loading team overview.</div>';
+        body.innerHTML = '<div class="error">Could not load current workers.</div>';
         console.error(e);
     }
 }
 
-function renderTeamOverview(data) {
-    const teams = data.teams || [];
-    document.getElementById('teamSummaryStrip').innerHTML = `
-        <span class="dss-item dss-present">${teams.length} team${teams.length === 1 ? '' : 's'}</span>
-        <span class="dss-item dss-days">${data.total_workers} present</span>
-        <span class="dss-item dss-ot">${data.total_ot_hours} OT hrs</span>
+function renderCurrent(data) {
+    lastCurrentData = data;
+    // Biggest crew first. worker_count = distinct workers present in this team
+    // over the window.
+    const teams = (data.teams || []).slice().sort((a, b) => b.worker_count - a.worker_count);
+
+    document.getElementById('currentSummaryStrip').innerHTML = `
+        <span class="dss-item dss-days">${teams.length} team${teams.length === 1 ? '' : 's'}</span>
+        <span class="dss-item dss-present">${data.total_workers} head${data.total_workers === 1 ? '' : 's'}</span>
     `;
 
-    const body = document.getElementById('teamBody');
+    const body = document.getElementById('currentBody');
     if (!teams.length) {
-        body.innerHTML = '<div class="empty-state">No attendance for the selected team(s) in this period.</div>';
+        body.innerHTML = '<div class="empty-state">No workers present in this window.</div>';
         return;
     }
 
-    body.innerHTML = '<div class="team-overview">' + teams.map(t => {
-        // Tally present labours by designation (role) for an at-a-glance mix.
+    body.innerHTML = teams.map(t => {
+        // Designation split — distinct heads per role, biggest first.
         const roles = {};
         (t.members || []).forEach(m => {
             const d = m.designation || 'No role';
             roles[d] = (roles[d] || 0) + 1;
         });
-        const roleChips = Object.keys(roles).sort().map(d =>
-            `<span class="role-chip">${escapeHtml(d)} <strong>${roles[d]}</strong></span>`).join('');
+        const roleEntries = Object.entries(roles).sort((a, b) => b[1] - a[1]);
+        const max = Math.max(1, ...roleEntries.map(r => r[1]));
+        const bars = roleEntries.map(([d, c]) => `
+            <div class="activity-bar">
+                <span class="ab-label">${escapeHtml(d)}</span>
+                <span class="ab-track"><span class="ab-fill" style="width:${Math.round(c / max * 100)}%"></span></span>
+                <span class="ab-count">${c}</span>
+            </div>`).join('');
 
-        const members = (t.members || []).map(m => {
-            const role = m.designation ? `<span class="gm-role">${escapeHtml(m.designation)}</span>` : '';
-            const ot = m.ot_hours > 0 ? `<span class="gm-ot">+${m.ot_hours} OT</span>` : '';
-            return `
-                <div class="group-member" onclick="showHistory(${m.worker_id})">
-                    <span class="gm-name">${escapeHtml(m.name)}</span>
-                    ${role}
-                    <span class="gm-meta"><span class="gm-days">${m.present_days}d present</span>${ot}</span>
-                </div>`;
-        }).join('');
+        // Drill-down: just who they are — name + designation, no attendance data.
+        const members = (t.members || []).slice().sort((a, b) => a.name.localeCompare(b.name)).map(m => `
+            <span class="current-member">
+                <span class="gm-name">${escapeHtml(m.name)}</span>
+                ${m.designation ? `<span class="gm-role">${escapeHtml(m.designation)}</span>` : ''}
+            </span>`).join('');
 
         return `
-            <div class="team-block">
-                <div class="team-block-header">
-                    <div class="team-block-title">
+            <details class="current-team">
+                <summary class="current-team-summary">
+                    <div class="current-team-head">
                         <span class="team-block-name">${escapeHtml(t.name)}</span>
-                        <span class="team-block-stats">
-                            <span><strong>${t.worker_count}</strong> present</span>
-                            <span><strong>${t.working_days}</strong> days</span>
-                            <span><strong>${t.ot_hours}</strong> OT hrs</span>
-                        </span>
+                        <span class="team-head-count"><strong>${t.worker_count}</strong> ${t.worker_count === 1 ? 'head' : 'heads'}</span>
                     </div>
-                    ${roleChips ? `<div class="team-roles">${roleChips}</div>` : ''}
-                </div>
-                <div class="team-members">${members}</div>
-            </div>`;
-    }).join('') + '</div>';
-}
-
-function formatDate(dateStr) {
-    const d = parseDate(dateStr);
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+                    <div class="current-role-bars">${bars}</div>
+                </summary>
+                <div class="current-members">${members}</div>
+            </details>`;
+    }).join('');
 }
 
 function escapeHtml(str) {

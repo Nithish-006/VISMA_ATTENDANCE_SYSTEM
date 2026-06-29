@@ -2006,7 +2006,24 @@ tr.total-row td {
 .day-quick-chips,
 .period-quick-chips {
     display: flex;
+    flex-wrap: nowrap;
     gap: 8px;
+    /* Keep the quick pills on a single clean line; scroll if a narrow phone
+       can't fit all five (no visible scrollbar). */
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+.day-quick-chips::-webkit-scrollbar,
+.period-quick-chips::-webkit-scrollbar { display: none; }
+
+.day-quick-chips .quick-filter-pill,
+.period-quick-chips .quick-filter-pill { flex-shrink: 0; }
+
+/* Trim the pill row on phones for a cleaner single line (e.g. Last Month). */
+@media (max-width: 600px) {
+    .quick-filter-pill.hide-on-mobile { display: none; }
 }
 
 .day-chip,
@@ -2245,6 +2262,23 @@ tr.total-row td {
     .period-chooser { gap: 8px; }
     .period-custom { width: 100%; }
     .period-custom .date-input { flex: 1; min-width: 0; }
+
+    /* On phones, every pill row spans the full width with evenly sized pills,
+       so filters, KPI counts and the group-by toggle read as clean segments. */
+    .day-chooser,
+    .period-chooser { flex-direction: column; align-items: stretch; }
+
+    .day-quick-chips,
+    .period-quick-chips { width: 100%; overflow-x: visible; }
+    .day-quick-chips .quick-filter-pill,
+    .period-quick-chips .quick-filter-pill { flex: 1 1 0; min-width: 0; }
+
+    .day-summary-strip { flex-wrap: nowrap; }
+    .day-summary-strip .dss-item { flex: 1 1 0; text-align: center; }
+
+    .group-by-bar { flex-wrap: nowrap; }
+    .group-by-toggle { flex: 1; display: flex; }
+    .group-by-toggle .group-by-btn { flex: 1 1 0; min-width: 0; padding-left: 0; padding-right: 0; }
 }
 
 .summary-stat-cards {
