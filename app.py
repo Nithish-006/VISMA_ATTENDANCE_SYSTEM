@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from flask_cors import CORS
 from sqlalchemy import inspect, text
 from config import config
@@ -256,6 +256,18 @@ def create_app(config_name=None):
 
     app.register_blueprint(attendance_bp)
     app.register_blueprint(salary_bp)
+
+    @app.after_request
+    def no_store_api(response):
+        """Never let the browser/PWA cache API (JSON) responses.
+
+        These return live data. Without this, a saved Worker Pay edit (or any
+        change) could appear to "revert" after a refresh because the page re-read
+        a stale cached /api/... response instead of fetching the updated data.
+        """
+        if request.path.startswith('/api/'):
+            response.headers['Cache-Control'] = 'no-store'
+        return response
 
     # Create database tables
     with app.app_context():

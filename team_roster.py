@@ -16,19 +16,29 @@ from models import TEAMS
 # (WhatsApp Image 2026-06-29 at 17.07.50.jpeg), designation suffixes stripped.
 # Edit here to fix any spelling the backfill reports as unmatched.
 ROSTER = {
+    # Names use the exact prod worker spellings. Where the image differed it is
+    # noted inline, e.g. PRASANTH was "PRASATH (H)" on the sheet.
     'Rajeeb': [
         'RAVI', 'SURAJ', 'NITHISH KUMAR', 'GANDHI', 'GAURAV', 'S PRINCE',
-        'PRINCE KUMAR CHOUDHARY', 'HIMANSHU GUPTA', 'PRASATH', 'KUNTHAN',
-        'LALMOHAN', 'AMIT', 'R NITHISH CHOUDHARY',
+        'PRINCE KUMAR CHOUDHARY', 'HIMANSHU GUPTA',
+        'PRASANTH',            # image: PRASATH
+        'KUNDHAN',             # image: KUNTHAN
+        'LALMOHAN',
+        'AMITH',               # image: AMIT
+        'R NITISH CHOUDHARY',  # image: R NITHISH CHOUDHARY
     ],
     'Visma': [
-        'KRISHNA KUMAR', 'NITHISH KUMAR LAUHAR',
+        'KRISHNAKUMAR',        # image: KRISHNA KUMAR
+        'NITHISH KUMAR LAUHAR',
     ],
     'Ambeth': [
         'SONU', 'PROMOD', 'BAJINATH KUMAR', 'DEVENDRA SHA', 'SHIVAKUMAR',
-        'DURGESH KUSHWALA', 'DASHARATH KUSHWALA', 'AKILESH YADAV', 'INDRADEV',
-        'PRAHALAD MAHTO', 'TRILOKI', 'GIRIJESH KUSHWALA', 'ASHISH', 'JANUDEEN',
-        'HARINDHAR CHOUDRY', 'KAUSHLENDAR',
+        'DURGESH KUSHWALA', 'DASHARATH KUSHWALA',
+        'AKILESHYADAV',        # image: AKILESH YADAV
+        'INDRADEV', 'PRAHALAD MAHTO', 'TRILOKI', 'GIRIJESH KUSHWALA',
+        'ASHISH', 'JANUDEEN',
+        'HARINDHERCHOUDRY',    # image: HARINDHAR CHOUDRY
+        'KAUSHLENDER',         # image: KAUSHLENDAR
     ],
 }
 
