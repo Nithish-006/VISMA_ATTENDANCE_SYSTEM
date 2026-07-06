@@ -708,6 +708,7 @@ async function loadWorkerEditor() {
                                     <td data-label="Designation">
                                         <select class="edit-input edit-designation" data-original="${l.designation || ''}" onchange="markEditChanged(this)">
                                             <option value="">--</option>
+                                            ${l.designation && !['FITTER','WELDER','HELPER','RIGGER'].includes(l.designation) ? `<option value="${escapeHtml(l.designation)}" selected>${escapeHtml(l.designation)}</option>` : ''}
                                             <option value="FITTER" ${l.designation === 'FITTER' ? 'selected' : ''}>FITTER</option>
                                             <option value="WELDER" ${l.designation === 'WELDER' ? 'selected' : ''}>WELDER</option>
                                             <option value="HELPER" ${l.designation === 'HELPER' ? 'selected' : ''}>HELPER</option>
