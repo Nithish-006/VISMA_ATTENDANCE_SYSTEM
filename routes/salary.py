@@ -543,6 +543,7 @@ def export_salary_report():
             winfo[w.id] = {
                 'name': w.name,
                 'designation': w.designation or '',
+                'team': w.team or '',
                 'rate': float(w.base_salary_per_day) if w.base_salary_per_day else 0,
                 'monthly_salaried': bool(w.monthly_salaried),
             }
@@ -579,6 +580,10 @@ def export_salary_report():
         name = info.get('name', f'Worker {wid}')
         desig = info.get('designation', '')
         return f"{name}({desig.upper()})" if desig else name
+
+    def team_of(wid):
+        """Team label from the worker master, so it can be filtered/totalled."""
+        return winfo.get(wid, {}).get('team', '') or '-'
 
     # --- Aggregate per worker (the complete picture) ---
     workers = {}
@@ -653,8 +658,8 @@ def export_salary_report():
         ws['A3'] = filter_text
         ws['A2'].font = ws['A3'].font = _SUB_FONT
     else:
-        _build_worker_summary(wb, workers, label, period_text, filter_text)
-        _build_daily_attendance(wb, att_records, label, period_text, filter_text)
+        _build_worker_summary(wb, workers, label, team_of, period_text, filter_text)
+        _build_daily_attendance(wb, att_records, label, team_of, period_text, filter_text)
         _build_daily_project_summary(wb, daily, projects, period_text, filter_text)
 
     buffer = BytesIO()
@@ -695,11 +700,11 @@ def _style_header(ws, row_idx, ncols):
         cell.border = _BORDER
 
 
-def _build_worker_summary(wb, workers, label, period_text, filter_text):
+def _build_worker_summary(wb, workers, label, team_of, period_text, filter_text):
     """Sheet 1 — the complete per-worker picture, colour-highlighted."""
     ws = wb.create_sheet(title='Worker Summary')
-    headers = ['S.No', 'Worker', 'Pay Type', 'Day Rate', 'Present', 'Absent',
-               'OT Hrs', 'Base Pay', 'OT Pay', 'Total Salary']
+    headers = ['S.No', 'Worker', 'Team', 'Pay Type', 'Day Rate', 'Present',
+               'Absent', 'OT Hrs', 'Base Pay', 'OT Pay', 'Total Salary']
     row = _write_banner(ws, 'WORKER SALARY SUMMARY', period_text, filter_text, len(headers))
 
     header_row = row
@@ -708,7 +713,7 @@ def _build_worker_summary(wb, workers, label, period_text, filter_text):
     _style_header(ws, header_row, len(headers))
     row += 1
 
-    money_cols = {4, 8, 9, 10}  # Day Rate, Base Pay, OT Pay, Total Salary
+    money_cols = {5, 9, 10, 11}  # Day Rate, Base Pay, OT Pay, Total Salary
     tot_present = tot_absent = 0
     tot_ot = tot_base = tot_otpay = tot_total = 0.0
 
@@ -731,30 +736,30 @@ def _build_worker_summary(wb, workers, label, period_text, filter_text):
         pay_type = 'Monthly' if w['monthly'] else 'Daily'
 
         values = [
-            s_no, label(wid), pay_type, rate_display,
+            s_no, label(wid), team_of(wid), pay_type, rate_display,
             w['present'], w['absent'], round(w['ot'], 2),
             base_pay, ot_pay, total,
         ]
         for c, v in enumerate(values, start=1):
             cell = ws.cell(row=row, column=c, value=v)
             cell.border = _BORDER
-            cell.alignment = _LEFT if c == 2 else _CENTER
+            cell.alignment = _LEFT if c in (2, 3) else _CENTER
             if c in money_cols and isinstance(v, (int, float)):
                 cell.number_format = _MONEY_FMT
             if row % 2 == 0:
                 cell.fill = _BAND_FILL
         # Pay-type cell: blue for monthly, green for daily-rate.
-        pt = ws.cell(row=row, column=3)
+        pt = ws.cell(row=row, column=4)
         pt.fill = _MONTHLY_FILL if w['monthly'] else _DAILY_FILL
         pt.font = Font(bold=True)
         # Total salary stands out.
-        tcell = ws.cell(row=row, column=10)
+        tcell = ws.cell(row=row, column=11)
         tcell.fill = _MONEY_FILL
         tcell.font = Font(bold=True)
         # Missing-rate rows: flag the rate AND the (meaningless) totals in red so
         # the viewer reads "fix the rate", not "this person earned nothing".
         if rate_missing:
-            for c in (4, 8, 10):
+            for c in (5, 9, 11):
                 wc = ws.cell(row=row, column=c)
                 wc.fill = _WARN_FILL
                 wc.font = _WARN_FONT
@@ -768,7 +773,7 @@ def _build_worker_summary(wb, workers, label, period_text, filter_text):
         row += 1
 
     # Totals band
-    totals = ['', 'TOTAL', '', '', tot_present, tot_absent, round(tot_ot, 2),
+    totals = ['', 'TOTAL', '', '', '', tot_present, tot_absent, round(tot_ot, 2),
               round(tot_base, 2), round(tot_otpay, 2), round(tot_total, 2)]
     for c, v in enumerate(totals, start=1):
         cell = ws.cell(row=row, column=c, value=v)
@@ -779,16 +784,16 @@ def _build_worker_summary(wb, workers, label, period_text, filter_text):
         if c in money_cols and isinstance(v, (int, float)):
             cell.number_format = _MONEY_FMT
 
-    widths = [6, 30, 10, 11, 9, 9, 9, 12, 11, 14]
+    widths = [6, 30, 12, 10, 11, 9, 9, 9, 12, 11, 14]
     for idx, wd in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(idx)].width = wd
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
 
 
-def _build_daily_attendance(wb, att_records, label, period_text, filter_text):
+def _build_daily_attendance(wb, att_records, label, team_of, period_text, filter_text):
     """Sheet 2 — one row per worker per day; status colour-coded."""
     ws = wb.create_sheet(title='Daily Attendance')
-    headers = ['Date', 'Day', 'Worker', 'Status', 'OT Hrs', 'Project', 'Work']
+    headers = ['Date', 'Day', 'Worker', 'Team', 'Status', 'OT Hrs', 'Project', 'Work']
     row = _write_banner(ws, 'DAILY ATTENDANCE DETAIL', period_text, filter_text, len(headers))
 
     header_row = row
@@ -804,26 +809,30 @@ def _build_daily_attendance(wb, att_records, label, period_text, filter_text):
         ot = float(a.ot_hours) if a.ot_hours else 0
         values = [
             a.date.strftime('%d/%m/%Y'), day_name, label(a.worker_id),
-            a.status or '', (ot if ot else ''), a.project or '-', a.work or '-',
+            team_of(a.worker_id), a.status or '', (ot if ot else ''),
+            a.project or '-', a.work or '-',
         ]
         for c, v in enumerate(values, start=1):
             cell = ws.cell(row=row, column=c, value=v)
             cell.border = _BORDER
-            cell.alignment = _LEFT if c in (3, 6, 7) else _CENTER
+            cell.alignment = _LEFT if c in (3, 4, 7, 8) else _CENTER
             if row % 2 == 0:
                 cell.fill = _BAND_FILL
         # Colour-code the status cell.
-        scell = ws.cell(row=row, column=4)
+        scell = ws.cell(row=row, column=5)
         style = _STATUS_STYLE.get(a.status)
         if style:
             scell.fill, scell.font = style
         scell.alignment = _CENTER
         row += 1
 
-    widths = [12, 6, 30, 8, 8, 26, 18]
+    widths = [12, 6, 30, 12, 8, 8, 26, 18]
     for idx, wd in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(idx)].width = wd
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+    # One-click filtering (e.g. by Team) over the whole header+data block.
+    if row > header_row + 1:
+        ws.auto_filter.ref = f"A{header_row}:{get_column_letter(len(headers))}{row - 1}"
 
 
 def _build_daily_project_summary(wb, daily, projects, period_text, filter_text):
