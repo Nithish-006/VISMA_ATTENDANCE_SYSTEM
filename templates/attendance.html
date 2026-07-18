@@ -192,6 +192,36 @@
         font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
         letter-spacing: 0.03em; color: var(--text-secondary); margin-top: 0.25rem;
     }
+    /* Designation chips drill down to the actual workers behind the count. */
+    .co-chip.co-clickable { cursor: pointer; transition: border-color 0.12s, box-shadow 0.12s; }
+    .co-chip.co-clickable:hover { border-color: var(--accent); }
+    .co-chip.co-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+
+    .designation-drill {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-light);
+        border-radius: 12px;
+        padding: 0.85rem 1rem;
+    }
+    .dd-head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 0.6rem; margin-bottom: 0.7rem;
+    }
+    .dd-title { font-weight: 700; font-size: 1rem; color: var(--text-primary); }
+    .dd-close {
+        background: none; border: none; cursor: pointer;
+        font-size: 1.1rem; line-height: 1; color: var(--text-secondary); padding: 0.1rem 0.3rem;
+    }
+    .dd-close:hover { color: var(--text-primary); }
+    .dd-members { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .gm-team {
+        font-size: 0.72rem; font-weight: 600;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-medium);
+        border-radius: 6px;
+        padding: 0.05rem 0.4rem;
+        color: var(--text-secondary);
+    }
 
     /* Date range is a desktop-only refinement; phones use the quick pills alone. */
     .desktop-range { display: none; }
@@ -861,6 +891,8 @@ function renderPeriod(data) {
 // carries each present worker with their designation.
 
 let lastCurrentData = null;
+let currentHeads = [];      // flat {name, designation, team} for the drill-down
+let selectedRole = null;    // designation whose workers are currently shown
 
 function setCurrentPeriod(range) {
     let start, end;
@@ -932,19 +964,30 @@ function renderCurrent(data) {
         overall[d] = (overall[d] || 0) + 1;
     }));
     const overallEntries = Object.entries(overall).sort((a, b) => b[1] - a[1]);
+
+    // Flat head list so a designation chip can reveal exactly who it counts,
+    // each tagged with the team they belong to.
+    currentHeads = [];
+    teams.forEach(t => (t.members || []).forEach(m => currentHeads.push({
+        name: m.name,
+        designation: m.designation || 'No role',
+        team: t.name,
+    })));
+
     const overviewHtml = `
         <div class="summary-block-title">By Designation</div>
         <div class="current-overview">
-            <div class="co-chip co-total">
+            <div class="co-chip co-total co-clickable" data-role="__all__" onclick="showRoleWorkers('__all__')">
                 <div class="co-count">${data.total_workers}</div>
                 <div class="co-label">Total Heads</div>
             </div>
             ${overallEntries.map(([d, c]) => `
-                <div class="co-chip">
+                <div class="co-chip co-clickable" data-role="${escapeHtml(d)}" onclick="showRoleWorkers('${escapeHtml(d).replace(/'/g, "\\'")}')">
                     <div class="co-count">${c}</div>
                     <div class="co-label">${escapeHtml(d)}</div>
                 </div>`).join('')}
         </div>
+        <div id="designationDrill"></div>
         <div class="summary-block-title">By Team</div>
     `;
 
@@ -985,6 +1028,47 @@ function renderCurrent(data) {
     }).join('');
 
     body.innerHTML = overviewHtml + teamsHtml;
+    selectedRole = null;  // fresh render starts with the drill-down closed
+}
+
+// Reveal the workers behind a designation chip, each tagged with their team.
+// Clicking the active chip again (or its ✕) collapses the panel.
+function showRoleWorkers(role) {
+    const drill = document.getElementById('designationDrill');
+    if (!drill) return;
+
+    // Toggle off if the same chip is clicked again.
+    if (selectedRole === role) {
+        selectedRole = null;
+        drill.innerHTML = '';
+        document.querySelectorAll('#currentBody .co-chip').forEach(c => c.classList.remove('co-active'));
+        return;
+    }
+    selectedRole = role;
+
+    document.querySelectorAll('#currentBody .co-chip').forEach(c =>
+        c.classList.toggle('co-active', c.dataset.role === role));
+
+    const all = role === '__all__';
+    const heads = (all ? currentHeads : currentHeads.filter(h => h.designation === role))
+        .slice().sort((a, b) => a.name.localeCompare(b.name));
+    const title = all ? 'All Heads' : role;
+
+    const members = heads.map(h => `
+        <span class="current-member">
+            <span class="gm-name">${escapeHtml(h.name)}</span>
+            ${all && h.designation ? `<span class="gm-role">${escapeHtml(h.designation)}</span>` : ''}
+            <span class="gm-team">${escapeHtml(h.team)}</span>
+        </span>`).join('');
+
+    drill.innerHTML = `
+        <div class="designation-drill">
+            <div class="dd-head">
+                <span class="dd-title">${escapeHtml(title)} <span class="team-head-count"><strong>${heads.length}</strong></span></span>
+                <button type="button" class="dd-close" onclick="showRoleWorkers('${role.replace(/'/g, "\\'")}')" aria-label="Close">&times;</button>
+            </div>
+            <div class="dd-members">${members || '<span class="team-head-count">No workers.</span>'}</div>
+        </div>`;
 }
 
 function escapeHtml(str) {
