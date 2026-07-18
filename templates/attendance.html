@@ -214,14 +214,13 @@
     }
     .dd-close:hover { color: var(--text-primary); }
     .dd-members { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-    .gm-team {
-        font-size: 0.72rem; font-weight: 600;
-        background: var(--bg-primary);
-        border: 1px solid var(--border-medium);
-        border-radius: 6px;
-        padding: 0.05rem 0.4rem;
-        color: var(--text-secondary);
+    /* Within a designation drill-down, workers are grouped under their team. */
+    .dd-team-group { padding-top: 0.7rem; margin-top: 0.7rem; border-top: 1px solid var(--border-light); }
+    .dd-team-group:first-of-type { padding-top: 0; margin-top: 0; border-top: none; }
+    .dd-team-head {
+        display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem;
     }
+    .dd-team-head .team-block-name { flex: 1; font-size: 0.95rem; }
 
     /* Date range is a desktop-only refinement; phones use the quick pills alone. */
     .desktop-range { display: none; }
@@ -1050,16 +1049,30 @@ function showRoleWorkers(role) {
         c.classList.toggle('co-active', c.dataset.role === role));
 
     const all = role === '__all__';
-    const heads = (all ? currentHeads : currentHeads.filter(h => h.designation === role))
-        .slice().sort((a, b) => a.name.localeCompare(b.name));
+    const heads = (all ? currentHeads : currentHeads.filter(h => h.designation === role));
     const title = all ? 'All Heads' : role;
 
-    const members = heads.map(h => `
-        <span class="current-member">
-            <span class="gm-name">${escapeHtml(h.name)}</span>
-            ${all && h.designation ? `<span class="gm-role">${escapeHtml(h.designation)}</span>` : ''}
-            <span class="gm-team">${escapeHtml(h.team)}</span>
-        </span>`).join('');
+    // Group the matching heads by team, biggest team first, names A–Z within.
+    const byTeam = {};
+    heads.forEach(h => (byTeam[h.team] = byTeam[h.team] || []).push(h));
+    const teamGroups = Object.entries(byTeam)
+        .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+
+    const groupsHtml = teamGroups.map(([team, ms]) => {
+        const members = ms.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => `
+            <span class="current-member">
+                <span class="gm-name">${escapeHtml(h.name)}</span>
+                ${all && h.designation ? `<span class="gm-role">${escapeHtml(h.designation)}</span>` : ''}
+            </span>`).join('');
+        return `
+            <div class="dd-team-group">
+                <div class="dd-team-head">
+                    <span class="team-block-name">${escapeHtml(team)}</span>
+                    <span class="team-head-count"><strong>${ms.length}</strong> ${ms.length === 1 ? 'head' : 'heads'}</span>
+                </div>
+                <div class="dd-members">${members}</div>
+            </div>`;
+    }).join('');
 
     drill.innerHTML = `
         <div class="designation-drill">
@@ -1067,7 +1080,7 @@ function showRoleWorkers(role) {
                 <span class="dd-title">${escapeHtml(title)} <span class="team-head-count"><strong>${heads.length}</strong></span></span>
                 <button type="button" class="dd-close" onclick="showRoleWorkers('${role.replace(/'/g, "\\'")}')" aria-label="Close">&times;</button>
             </div>
-            <div class="dd-members">${members || '<span class="team-head-count">No workers.</span>'}</div>
+            ${groupsHtml || '<span class="team-head-count">No workers.</span>'}
         </div>`;
 }
 
