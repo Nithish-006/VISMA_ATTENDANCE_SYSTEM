@@ -14,8 +14,8 @@
     --bg-tertiary: #E9E6DA;      /* sunken / hover */
     --bg-glass: rgba(240, 238, 230, 0.92);
     --text-primary: #1F1E1B;     /* slate ink */
-    --text-secondary: #35332E;
-    --text-tertiary: #56534A;
+    --text-secondary: #2A2924;
+    --text-tertiary: #46433A;
     --border-light: #E4E0D4;
     --border-medium: #D3CEBE;
     --accent: #D97757;           /* Claude coral */
@@ -2427,6 +2427,14 @@ tr.total-row td {
     padding: 12px 16px;
     font-size: 0.875rem;
     border-bottom: 1px solid var(--border-light);
+}
+
+/* Date / name column in the summary tables reads as a row heading, not body
+   copy — regular weight at 0.875rem looked washed out next to the badges. */
+.daily-breakdown-table td:first-child,
+.worker-summary-table td:first-child {
+    color: var(--text-primary);
+    font-weight: 600;
 }
 
 .daily-breakdown-table th,
