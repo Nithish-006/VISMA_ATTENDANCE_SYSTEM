@@ -4145,3 +4145,108 @@ select.edit-input {
    Claude theme keeps the original soft, rounded UI. The previous
    sharp-edge override is retired so radii/type come from :root above.
    ════════════════════════════════════════════════════════════════ */
+
+/* ============================================================
+   COMPACT DROPDOWNS
+   Ported from the aggregator's HIG menu spec (VISMA - AGGREGATOR
+   static/hig.css §3) so the two apps' pickers feel like one product:
+
+       control     36px high, 0.8125rem, 1px border, 8px radius
+       container   12px radius, 4px inner padding
+       row         28px min-height, 8px radius, inset inside that padding
+       touch       rows and controls grow to 44px on coarse pointers
+
+   The touch rule matters here: `.select-input` and `.cs-*` are shared
+   with the attendance Mark screen, which is thumb-driven on the shop
+   floor. Compact on a desktop pointer, 44px targets on a phone.
+   ============================================================ */
+
+/* -- Trigger / native control -------------------------------------------- */
+.select-input,
+.cs-trigger.select-input,
+.summary-filters .filter-group .date-input,
+.summary-filters .filter-group .select-input,
+.summary-filters .filter-group .cs-trigger.select-input {
+    height: 36px;
+    padding: 0 10px;
+    border-width: 1px;
+    border-radius: var(--radius-sm);
+    font-size: 0.8125rem;
+}
+
+/* The Reset button shares the filter row, so it tracks the same height —
+   otherwise the row reads as two different control sizes. */
+.filter-action .btn {
+    height: 36px;
+    font-size: 0.8125rem;
+}
+
+.cs-trigger.select-input .cs-caret {
+    font-size: 0.6rem;
+}
+
+/* Focus ring tightens with the smaller control. */
+.cs-open .cs-trigger.select-input,
+.cs-trigger.select-input:focus {
+    box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* -- Menu ---------------------------------------------------------------- */
+.cs-panel {
+    padding: 4px;
+    border-radius: var(--radius-md);
+}
+
+.cs-list {
+    max-height: 250px;
+}
+
+.cs-option {
+    display: flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 0.8125rem;
+}
+
+.cs-option.cs-selected::after {
+    margin-left: auto;
+    float: none;
+}
+
+.cs-empty {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+}
+
+.cs-search-wrap {
+    padding: 0 0 4px;
+}
+
+.cs-search {
+    height: 28px;
+    padding: 0 8px;
+    border-width: 1px;
+    font-size: 0.8125rem;
+}
+
+/* -- Touch: HIG keeps a 44px target when there is no fine pointer --------- */
+@media (pointer: coarse) {
+    .select-input,
+    .cs-trigger.select-input,
+    .summary-filters .filter-group .date-input,
+    .summary-filters .filter-group .select-input,
+    .summary-filters .filter-group .cs-trigger.select-input,
+    .filter-action .btn {
+        height: 44px;
+    }
+
+    .cs-option {
+        min-height: 44px;
+    }
+
+    .cs-search {
+        height: 40px;
+    }
+}
