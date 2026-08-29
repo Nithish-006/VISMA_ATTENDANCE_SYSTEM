@@ -14,8 +14,8 @@
     --bg-tertiary: #E9E6DA;      /* sunken / hover */
     --bg-glass: rgba(240, 238, 230, 0.92);
     --text-primary: #1F1E1B;     /* slate ink */
-    --text-secondary: #5C5A52;
-    --text-tertiary: #8E8B80;
+    --text-secondary: #35332E;
+    --text-tertiary: #56534A;
     --border-light: #E4E0D4;
     --border-medium: #D3CEBE;
     --accent: #D97757;           /* Claude coral */
@@ -285,7 +285,7 @@ optgroup {
 }
 
 .module-card:nth-child(2):hover .module-icon-wrap {
-    color: #3E3A33;
+    color: #26241F;
 }
 
 /* Remove specific nth-child rules that were compatible with white backgrounds, we are using global transparency now */
@@ -305,7 +305,7 @@ optgroup {
 
 .module-desc {
     font-size: 1rem;
-    color: #94a3b8;
+    color: var(--text-secondary);
     margin: 0;
     line-height: 1.6;
 }
@@ -335,7 +335,7 @@ optgroup {
 }
 
 .module-card:nth-child(2):hover .module-arrow {
-    color: #3E3A33;
+    color: #26241F;
 }
 
 /* Footer */
