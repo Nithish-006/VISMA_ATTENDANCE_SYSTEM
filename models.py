@@ -193,3 +193,22 @@ def compute_pay(base_salary, working_days, ot_hours, monthly_salaried=False):
     else:
         ot_pay = (base_salary / 8) * ot_hours
     return base_pay, ot_pay, base_pay + ot_pay
+
+
+def resolve_pay_basis(month_rate, month_monthly, master_rate, master_monthly):
+    """Pick the (rate, monthly_salaried) pair that prices one month.
+
+    A month that stored a real rate was genuinely priced, so its snapshot pair is
+    used verbatim — settled history keeps both the rate AND the pay model it was
+    actually paid under, and flipping the toggle today can't rewrite it.
+
+    A month with no stored rate (0/None) was never priced at all. Both halves of
+    the basis then fall back to the worker master together: taking the master's
+    rate while keeping the empty row's default pay model would price the days at
+    today's rate under a pay model nobody ever chose, which is exactly why
+    flipping Daily/Monthly appeared to do nothing on those months.
+    """
+    month_rate = float(month_rate or 0)
+    if month_rate > 0:
+        return month_rate, bool(month_monthly)
+    return float(master_rate or 0), bool(master_monthly)

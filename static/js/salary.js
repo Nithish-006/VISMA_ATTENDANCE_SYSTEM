@@ -800,8 +800,9 @@ async function saveWorkerDetails(workerId) {
         const ok = confirm(
             `${name} will be ${rule}` +
             (baseChanged ? ` at ${formatCurrency(basePay)}/day` : '') +
-            `.\n\nThis applies to the current month and going forward. ` +
-            `Earlier months stay unchanged.`
+            `.\n\nThis applies to the current month and going forward, plus any ` +
+            `earlier month that was never priced (no rate stored, total ₹0). ` +
+            `Months already paid at a real rate stay unchanged.`
         );
         if (!ok) return;
     }
@@ -837,6 +838,8 @@ async function submitWorkerDetails(workerId, payload) {
             throw new Error(err.error || 'Failed to save');
         }
 
+        const result = await response.json();
+
         // Update original values so changed highlighting clears
         row.querySelector('.edit-name').dataset.original = payload.name;
         row.querySelector('select.edit-designation').dataset.original = payload.designation;
@@ -849,7 +852,13 @@ async function submitWorkerDetails(workerId, payload) {
 
         btn.textContent = 'Saved';
         btn.classList.add('saved');
-        status.textContent = '';
+        // Say how many months the change actually re-priced. Silence here was
+        // why a pay-type flip felt like it "did nothing" — a worker whose only
+        // affected months were already settled genuinely re-prices 0 months.
+        const months = result.repriced_month_labels || [];
+        status.textContent = months.length
+            ? `Re-priced ${months.join(', ')}`
+            : 'Saved — no months re-priced';
         status.className = 'edit-status success';
 
         // Re-priced months change monthly totals — refresh the summary.
@@ -858,7 +867,8 @@ async function submitWorkerDetails(workerId, payload) {
         setTimeout(() => {
             btn.textContent = 'Save';
             btn.classList.remove('saved');
-        }, 2000);
+            status.textContent = '';
+        }, 4000);
 
     } catch (error) {
         status.textContent = 'Error';

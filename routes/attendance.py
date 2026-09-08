@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models import db, Attendance, Salary, Supervisor, Worker, compute_pay, TEAMS
+from models import db, Attendance, Salary, Supervisor, Worker, compute_pay, resolve_pay_basis, TEAMS
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from sqlalchemy import func, case
@@ -537,21 +537,17 @@ def get_attendance_summary():
         """(rate, ot_pay) for one present day, using that month's stored rate.
 
         Look up the base pay/day saved for the record's own month and use it, so a
-        worker raised mid-life keeps the old rate on earlier months. If a month's
-        stored rate is missing/0, fall back to the worker's current master rate.
-        OT is paid at the hourly rate (day rate / 8) for daily-rate workers only.
-        This keeps the dashboard identical to the exported report.
+        worker raised mid-life keeps the old rate on earlier months. A month with
+        no stored rate was never priced, so rate AND pay model both fall back to
+        the worker master (see resolve_pay_basis). OT is paid at the hourly rate
+        (day rate / 8) for daily-rate workers only. This keeps the dashboard
+        identical to the exported report.
         """
         winfo = worker_info_map.get(record.worker_id, {})
-        master_rate = winfo.get('base_salary_per_day', 0)
-        key = (record.worker_id, record.date.year, record.date.month)
-        if key in month_rate:
-            rate, monthly = month_rate[key]
-            if rate <= 0:
-                rate = master_rate
-        else:
-            rate = master_rate
-            monthly = winfo.get('monthly_salaried', False)
+        snap = month_rate.get((record.worker_id, record.date.year, record.date.month), (0, False))
+        rate, monthly = resolve_pay_basis(
+            snap[0], snap[1],
+            winfo.get('base_salary_per_day', 0), winfo.get('monthly_salaried', False))
         paid_ot = rate > 0 and not monthly
         ot_pay = (rate / 8) * ot_hours if paid_ot else 0
         return rate, ot_pay

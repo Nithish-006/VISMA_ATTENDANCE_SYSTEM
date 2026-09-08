@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, send_file, current_app
-from models import db, Salary, Attendance, Worker, Supervisor, compute_pay
-from routes.attendance import ist_now
+from models import db, Salary, Attendance, Worker, Supervisor, compute_pay, resolve_pay_basis
+from routes.attendance import ist_now, _recalculate_monthly_salaries
 from decimal import Decimal
 from datetime import datetime, date
 from functools import wraps
@@ -197,16 +197,14 @@ def get_project_salary():
     def basis_for(a):
         """(rate, monthly_salaried) for one record, using that month's stored rate.
 
-        Falls back to the worker's current master rate when a month has no stored
-        rate (or it's 0) — a genuinely rate-less worker stays at 0.
+        A month with no stored rate (or 0) was never priced, so rate AND pay model
+        both fall back to the worker master (see resolve_pay_basis) — a genuinely
+        rate-less worker stays at 0.
         """
         info = winfo.get(a.worker_id, {})
-        master_rate = info.get('rate', 0)
-        key = (a.worker_id, a.date.year, a.date.month)
-        if key in month_rate:
-            rate, monthly = month_rate[key]
-            return (rate if rate > 0 else master_rate), monthly
-        return master_rate, info.get('monthly_salaried', False)
+        snap = month_rate.get((a.worker_id, a.date.year, a.date.month), (0, False))
+        return resolve_pay_basis(snap[0], snap[1],
+                                 info.get('rate', 0), info.get('monthly_salaried', False))
 
     # Aggregate per month, and per worker within each month.
     months = {}
@@ -350,9 +348,10 @@ def update_worker_salary(worker_id):
 
     Name and designation are pure labels, so they propagate to every monthly
     snapshot for consistency. A change to base pay or the pay model (daily vs
-    monthly) re-prices ONLY the current month and any later month — every month
-    before this one stays frozen at the rate and total that were actually paid
-    then. Finalized history is never rewritten.
+    monthly) re-prices the current month, every later month, and any earlier
+    month that was never actually priced (no rate stored, so its total is 0 —
+    a gap rather than settled history). Every earlier month that does carry a
+    rate stays frozen at what was really paid then.
     """
     data = request.get_json()
     base_salary = data.get('base_salary_per_day')
@@ -383,8 +382,6 @@ def update_worker_salary(worker_id):
     if monthly_salaried is not None:
         worker.monthly_salaried = bool(monthly_salaried)
 
-    # The effective pay model after this update — drives whether OT is paid.
-    is_monthly = bool(worker.monthly_salaried)
     pay_changed = base_salary is not None or monthly_salaried is not None
 
     # The boundary: the current month (IST). This month and every later month
@@ -392,31 +389,60 @@ def update_worker_salary(worker_id):
     now = ist_now()
     current_ym = (now.year, now.month)
 
-    # 2. Sync the monthly snapshots. Labels (name/designation) propagate to all;
-    # base pay and total are rewritten only for the current month and forward.
+    # 2. Sync the monthly snapshots. Labels (name/designation) propagate to all.
     records = Salary.query.filter_by(worker_id=worker_id).all()
-    repriced = 0
     for salary in records:
         if name is not None:
             salary.name = name
         if designation is not None:
             salary.designation = designation
-        if pay_changed and (salary.year, salary.month) >= current_ym:
-            if base_salary is not None:
-                salary.base_salary_per_day = base_salary
-            salary.monthly_salaried = is_monthly
-            _, _, salary.total_salary = compute_pay(
-                salary.base_salary_per_day, salary.total_working_days, salary.ot_hours,
-                monthly_salaried=is_monthly
-            )
-            repriced += 1
+
+    # 3. Work out which months a pay change re-prices.
+    periods = set()
+    if pay_changed:
+        for salary in records:
+            if (salary.year, salary.month) >= current_ym:
+                # Current month and forward: always follows the new pay setup.
+                periods.add((worker_id, salary.year, salary.month))
+            elif not salary.base_salary_per_day or float(salary.base_salary_per_day) <= 0:
+                # An earlier month that stored no rate was never actually priced
+                # (its total is 0) — that's a gap, not settled history worth
+                # protecting. Heal it from the master so the pay model the user
+                # just picked visibly takes effect there too. Months that DO carry
+                # a rate stay frozen at what was really paid.
+                periods.add((worker_id, salary.year, salary.month))
+
+        # A worker with attendance this month but no snapshot row yet would
+        # otherwise see the toggle do nothing at all; seed the row from live
+        # attendance so the change always lands somewhere.
+        if (worker_id, now.year, now.month) not in periods:
+            has_current = db.session.query(Attendance.id).filter(
+                Attendance.worker_id == worker_id,
+                func.extract('year', Attendance.date) == now.year,
+                func.extract('month', Attendance.date) == now.month,
+            ).first()
+            if has_current:
+                periods.add((worker_id, now.year, now.month))
 
     db.session.commit()
 
+    # Recompute days/OT from attendance and re-price at the master rate and pay
+    # model — the same routine attendance marking uses, so there is exactly one
+    # place that turns attendance into a monthly total.
+    if periods:
+        _recalculate_monthly_salaries(sorted(periods))
+
+    # Name the months that moved. A pay-type flip that repairs an earlier,
+    # never-priced month is a one-way repair — that month now holds a real rate,
+    # so it counts as settled history and a later flip won't touch it again.
+    # Saying which months changed is what makes that legible.
+    labels = [f'{calendar.month_abbr[mo]} {yr}' for _, yr, mo in sorted(periods)]
+    repriced = len(periods)
     return jsonify({
         'message': f'Updated worker {worker_id} ({repriced} month(s) re-priced)',
         'worker_id': worker_id,
-        'repriced_months': repriced
+        'repriced_months': repriced,
+        'repriced_month_labels': labels
     })
 
 
@@ -562,17 +588,15 @@ def export_salary_report():
 
         Look up the base pay/day saved for the record's own month and use it, so
         the salary is present days x that month's rate (+ OT for daily, none for
-        monthly). If a month's stored rate is missing/0, fall back to the worker's
-        current master rate (a genuinely rate-less worker like SATHISH stays 0 and
-        is flagged 'Rate not set').
+        monthly). A month with no stored rate (or 0) was never priced, so rate AND
+        pay model both fall back to the worker master (see resolve_pay_basis) — a
+        genuinely rate-less worker like SATHISH stays 0 and is flagged
+        'Rate not set'.
         """
         info = winfo.get(a.worker_id, {})
-        master_rate = info.get('rate', 0)
-        key = (a.worker_id, a.date.year, a.date.month)
-        if key in month_rate:
-            rate, monthly = month_rate[key]
-            return (rate if rate > 0 else master_rate), monthly
-        return master_rate, info.get('monthly_salaried', False)
+        snap = month_rate.get((a.worker_id, a.date.year, a.date.month), (0, False))
+        return resolve_pay_basis(snap[0], snap[1],
+                                 info.get('rate', 0), info.get('monthly_salaried', False))
 
     def label(wid):
         """Worker as 'NAME(ROLE)' — role rides with the name, never a stray column."""
