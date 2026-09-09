@@ -53,8 +53,10 @@ class Worker(db.Model):
     # switch the salary calculation reads to decide whether OT is paid.
     monthly_salaried = db.Column(db.Boolean, nullable=False, default=False)
     # Soft-delete flag. Wage history should not be destroyed outright; this lets
-    # a worker be hidden without deleting their records. (The delete endpoint
-    # still hard-deletes for now to preserve current behaviour — see routes.)
+    # a worker be hidden without deleting their records. Deleting a worker
+    # clears this flag rather than cascading (routes.salary.delete_worker), so
+    # an accidental delete is undone by restoring the flag, not by re-keying
+    # months of attendance. Every roster query filters on it.
     active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())

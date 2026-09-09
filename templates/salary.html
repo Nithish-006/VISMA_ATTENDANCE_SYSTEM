@@ -107,6 +107,39 @@
             <!-- Panel 2: Worker Pay (base salary & details) -->
             <div id="panelWorkers" class="panel">
                 <main class="main-content">
+                    <!-- Filters apply to BOTH the active roster and the archived
+                         list below it. Status defaults to Active; archived
+                         workers are reachable here or via the hint under the
+                         table, so a removed worker is never a dead end. -->
+                    <div class="summary-filters worker-filters">
+                        <div class="filter-group filter-grow">
+                            <label>Name</label>
+                            <input type="text" id="workerSearch" class="text-input" placeholder="Search worker name..." autocomplete="off" oninput="renderWorkerEditor()">
+                        </div>
+                        <div class="filter-group">
+                            <label>Designation</label>
+                            <select id="workerDesignationFilter" class="select-input" onchange="renderWorkerEditor()">
+                                <option value="">All Designations</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>Team</label>
+                            <select id="workerTeamFilter" class="select-input" onchange="renderWorkerEditor()">
+                                <option value="">All Teams</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>Status</label>
+                            <select id="workerStatusFilter" class="select-input" onchange="renderWorkerEditor()">
+                                <option value="active">Active</option>
+                                <option value="archived">Archived</option>
+                                <option value="all">All</option>
+                            </select>
+                        </div>
+                        <div class="filter-action">
+                            <button class="btn btn-secondary" onclick="resetWorkerFilters()">Reset</button>
+                        </div>
+                    </div>
                     <div id="workerEditorContainer">
                         <div class="empty-state">Loading worker details...</div>
                     </div>

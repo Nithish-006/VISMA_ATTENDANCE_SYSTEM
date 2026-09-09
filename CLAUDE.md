@@ -65,3 +65,10 @@ python import_data.py --summary
 - `GET /salary/monthly` - Monthly breakdown for all workers
 - `GET /salary/<id>` - Single worker salary
 - `PUT /salary/<id>` - Update salary info (triggers recalculation)
+- `DELETE /salary/worker/<id>` - **Archive** a worker (soft delete). Clears
+  `Worker.active`; attendance and salary rows are preserved, so past months keep
+  showing in the summary and reports. A worker with no records at all is still
+  removed outright (`mode` in the response says which happened).
+- `POST /salary/worker/<id>/restore` - Undo an archive (flag flip; history was
+  never touched)
+- `GET /salary/workers/archived` - Archived workers + how many records each holds

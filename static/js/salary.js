@@ -664,6 +664,11 @@ function teamOptionsHtml(selected) {
         ).join('');
 }
 
+// The two rosters behind the Worker Pay tab, kept in memory so the filters can
+// re-render without a round trip. `archived` are soft-deleted workers: their
+// attendance and salary rows are intact and one Restore puts them back.
+let workerEditorData = { active: [], archived: [] };
+
 async function loadWorkerEditor() {
     const container = document.getElementById('workerEditorContainer');
     container.innerHTML = '<div class="loading">Loading worker details...</div>';
@@ -676,15 +681,123 @@ async function loadWorkerEditor() {
             catch (e) { teamsList = []; }
         }
 
-        const response = await fetch('/api/labours');
-        const labours = await response.json();
+        // Archived is a secondary concern: if that call fails the tab still
+        // works, it just can't offer the undo.
+        const [labours, archived] = await Promise.all([
+            fetch('/api/labours').then(r => r.json()),
+            fetch('/api/salary/workers/archived').then(r => r.ok ? r.json() : []).catch(() => [])
+        ]);
 
-        if (labours.length === 0) {
-            container.innerHTML = '<div class="empty-state">No workers found.</div>';
-            return;
-        }
+        workerEditorData = { active: labours, archived: archived };
+        populateWorkerFilterOptions();
+        renderWorkerEditor();
+    } catch (error) {
+        container.innerHTML = '<div class="error">Error loading worker details.</div>';
+        console.error(error);
+    }
+}
 
-        container.innerHTML = `
+// Fill the Designation/Team filters from the data actually present, so ad-hoc
+// values (a designation typed by hand) are selectable instead of invisible.
+function populateWorkerFilterOptions() {
+    const all = [...workerEditorData.active, ...workerEditorData.archived];
+
+    const fill = (id, values, allLabel) => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const keep = sel.value;
+        sel.innerHTML = `<option value="">${allLabel}</option>` +
+            values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+        // Restore the selection if it still exists after the rebuild.
+        sel.value = [...sel.options].some(o => o.value === keep) ? keep : '';
+    };
+
+    const uniqSorted = key => [...new Set(all.map(w => w[key]).filter(Boolean))].sort();
+    fill('workerDesignationFilter', uniqSorted('designation'), 'All Designations');
+    fill('workerTeamFilter', [...new Set([...teamsList, ...uniqSorted('team')])].filter(Boolean).sort(), 'All Teams');
+}
+
+function workerFilterValues() {
+    const val = id => (document.getElementById(id) || {}).value || '';
+    return {
+        search: val('workerSearch').trim().toUpperCase(),
+        designation: val('workerDesignationFilter'),
+        team: val('workerTeamFilter'),
+        status: val('workerStatusFilter') || 'active'
+    };
+}
+
+function matchesWorkerFilters(w, f) {
+    if (f.search && !(w.name || '').toUpperCase().includes(f.search)) return false;
+    if (f.designation && (w.designation || '') !== f.designation) return false;
+    if (f.team && (w.team || '') !== f.team) return false;
+    return true;
+}
+
+function resetWorkerFilters() {
+    const search = document.getElementById('workerSearch');
+    if (search) search.value = '';
+    ['workerDesignationFilter', 'workerTeamFilter'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (sel) sel.value = '';
+    });
+    const status = document.getElementById('workerStatusFilter');
+    if (status) status.value = 'active';
+    renderWorkerEditor();
+}
+
+// Jump straight from the "N archived" hint to the archived list.
+function showArchivedWorkers() {
+    const status = document.getElementById('workerStatusFilter');
+    if (status) status.value = 'archived';
+    renderWorkerEditor();
+}
+
+function renderWorkerEditor() {
+    const container = document.getElementById('workerEditorContainer');
+    if (!container) return;
+
+    const f = workerFilterValues();
+    const labours = workerEditorData.active.filter(w => matchesWorkerFilters(w, f));
+    const archived = workerEditorData.archived.filter(w => matchesWorkerFilters(w, f));
+    const showActive = f.status === 'active' || f.status === 'all';
+    const showArchived = f.status === 'archived' || f.status === 'all';
+
+    if (!workerEditorData.active.length && !workerEditorData.archived.length) {
+        container.innerHTML = '<div class="empty-state">No workers found.</div>';
+        return;
+    }
+
+    const filtered = f.search || f.designation || f.team;
+    let html = '';
+
+    if (showActive) {
+        html += labours.length
+            ? renderActiveWorkerTable(labours)
+            : `<div class="empty-state">No active workers match these filters.</div>`;
+    }
+
+    // Discoverability: when looking at the active roster, say how many workers
+    // are sitting in the archive rather than leaving them buried behind a filter.
+    if (f.status === 'active' && workerEditorData.archived.length) {
+        const n = workerEditorData.archived.length;
+        html += `<p class="archived-hint">${n} archived worker${n === 1 ? '' : 's'} —
+                 <button type="button" class="link-btn" onclick="showArchivedWorkers()">show</button></p>`;
+    }
+
+    if (showArchived) {
+        html += archived.length
+            ? renderArchivedWorkerTable(archived)
+            : `<div class="empty-state">${workerEditorData.archived.length && filtered
+                    ? 'No archived workers match these filters.'
+                    : 'No archived workers. Removing a worker from the roster puts them here.'}</div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function renderActiveWorkerTable(labours) {
+    return `
             <div class="edit-section" style="margin-bottom: 24px;">
                 <h2 class="edit-title">All Workers <span class="count">(${labours.length})</span></h2>
                 <div class="edit-table-wrap">
@@ -739,9 +852,123 @@ async function loadWorkerEditor() {
                 </div>
             </div>
         `;
+}
+
+// Archived workers are shown read-only: the point of this table is to get a
+// worker back, not to edit someone who is off the roster. Restore first, then
+// edit them in the active table above.
+function renderArchivedWorkerTable(archived) {
+    return `
+            <div class="edit-section edit-section-archived" style="margin-bottom: 24px;">
+                <h2 class="edit-title">Archived Workers <span class="count">(${archived.length})</span></h2>
+                <p class="archived-note">Removed from the roster, but nothing was deleted — their attendance and salary records are intact and past months still appear in the salary summary. Restore puts a worker back exactly as they were.</p>
+                <div class="edit-table-wrap">
+                    <table class="edit-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Designation</th>
+                                <th>Team</th>
+                                <th>Base Pay/Day</th>
+                                <th>Pay Type</th>
+                                <th>Records Held</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${archived.map(w => `
+                                <tr data-worker-id="${w.worker_id}" id="archivedRow_${w.worker_id}">
+                                    <td class="id-cell" data-label="ID">${w.worker_id}</td>
+                                    <td data-label="Name">${escapeHtml(w.name)}</td>
+                                    <td data-label="Designation">${escapeHtml(w.designation || '—')}</td>
+                                    <td data-label="Team">${escapeHtml(w.team || '—')}</td>
+                                    <td data-label="Base Pay/Day">${w.base_salary_per_day ? Number(w.base_salary_per_day).toLocaleString('en-IN') : '—'}</td>
+                                    <td data-label="Pay Type">${w.monthly_salaried ? 'Monthly' : 'Daily'}</td>
+                                    <td data-label="Records Held">${w.attendance_records} attendance · ${w.salary_records} salary</td>
+                                    <td class="edit-actions-cell" style="white-space: nowrap;">
+                                        <button class="edit-restore-btn" onclick="restoreWorker(${w.worker_id}, '${escapeHtml(w.name)}')">Restore</button>
+                                        <span class="edit-status" id="restoreStatus_${w.worker_id}"></span>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+}
+
+async function restoreWorker(workerId, workerName) {
+    const status = document.getElementById(`restoreStatus_${workerId}`);
+    const row = document.getElementById(`archivedRow_${workerId}`);
+    const btn = row ? row.querySelector('.edit-restore-btn') : null;
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Restoring...'; }
+    if (status) status.textContent = '';
+
+    try {
+        const response = await fetch(`/api/salary/worker/${workerId}/restore`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to restore');
+        }
+
+        showMessage(`${workerName} restored to the roster`, 'success');
+        // Reload both rosters: the worker moves from one table to the other.
+        // The filter bar lives outside the container, so the filters survive.
+        await loadWorkerEditor();
+        await refreshSalaryData();
     } catch (error) {
-        container.innerHTML = '<div class="error">Error loading worker details.</div>';
+        if (status) {
+            status.textContent = 'Restore failed';
+            status.className = 'edit-status error';
+        }
+        if (btn) { btn.disabled = false; btn.textContent = 'Restore'; }
         console.error(error);
+    }
+}
+
+// Keep the "N archived" line under the active table truthful after an archive,
+// patching it in place rather than redrawing the whole tab.
+function updateArchivedHint() {
+    const n = workerEditorData.archived.length;
+    const existing = document.querySelector('.archived-hint');
+
+    if (workerFilterValues().status !== 'active' || !n) {
+        if (existing) existing.remove();
+        return;
+    }
+
+    const html = `${n} archived worker${n === 1 ? '' : 's'} —
+                  <button type="button" class="link-btn" onclick="showArchivedWorkers()">show</button>`;
+    if (existing) {
+        existing.innerHTML = html;
+        return;
+    }
+    const section = document.querySelector('#workerEditorContainer .edit-section');
+    if (!section) return;
+    const p = document.createElement('p');
+    p.className = 'archived-hint';
+    p.innerHTML = html;
+    section.after(p);
+}
+
+// Pull the archived roster again and redraw, without touching the active table
+// (so half-typed edits in other rows survive an archive).
+async function refreshArchivedWorkers() {
+    try {
+        const r = await fetch('/api/salary/workers/archived');
+        if (!r.ok) return;
+        workerEditorData.archived = await r.json();
+        workerEditorData.active = workerEditorData.active.filter(
+            w => !workerEditorData.archived.some(a => a.worker_id === w.worker_id)
+        );
+    } catch (e) {
+        console.error(e);
     }
 }
 
@@ -880,7 +1107,7 @@ async function submitWorkerDetails(workerId, payload) {
 }
 
 async function deleteWorker(workerId, workerName) {
-    if (!confirm(`Are you sure you want to delete worker "${workerName}" (ID: ${workerId})?\n\nThis will permanently delete all attendance and salary records for this worker.`)) {
+    if (!confirm(`Remove worker "${workerName}" (ID: ${workerId}) from the roster?\n\nThey are archived, not erased: their attendance and salary records are kept, and past months still appear in the salary summary and reports.`)) {
         return;
     }
 
@@ -889,7 +1116,7 @@ async function deleteWorker(workerId, workerName) {
     const deleteBtn = row.querySelector('.edit-delete-btn');
 
     deleteBtn.disabled = true;
-    deleteBtn.textContent = 'Deleting...';
+    deleteBtn.textContent = 'Removing...';
     status.textContent = '';
 
     try {
@@ -900,8 +1127,10 @@ async function deleteWorker(workerId, workerName) {
 
         if (!response.ok) {
             const err = await response.json();
-            throw new Error(err.error || 'Failed to delete');
+            throw new Error(err.error || 'Failed to remove');
         }
+
+        const result = await response.json();
 
         row.style.transition = 'opacity 0.3s';
         row.style.opacity = '0';
@@ -915,11 +1144,23 @@ async function deleteWorker(workerId, workerName) {
             });
         }, 300);
 
-        // Removing a worker drops their salary rows — refresh the summary.
+        showMessage(result.mode === 'archived'
+            ? `${workerName} archived — records kept, restore any time from the Archived list`
+            : `${workerName} removed (had no records)`, 'success');
+
+        // Drop them from the in-memory roster, then pull the archive again so
+        // the hint and the Archived table are current. Deliberately does NOT
+        // redraw the active table, so unsaved edits in other rows survive.
+        workerEditorData.active = workerEditorData.active.filter(w => w.worker_id !== workerId);
+        await refreshArchivedWorkers();
+        updateArchivedHint();
+
+        // The worker leaves the roster but their salary rows stay — refresh the
+        // summary so it reflects the archive rather than a deletion.
         await refreshSalaryData();
 
     } catch (error) {
-        status.textContent = 'Delete failed';
+        status.textContent = 'Remove failed';
         status.className = 'edit-status error';
         deleteBtn.textContent = 'Delete';
         deleteBtn.disabled = false;

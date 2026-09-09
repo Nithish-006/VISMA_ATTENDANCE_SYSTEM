@@ -448,33 +448,98 @@ def update_worker_salary(worker_id):
 
 @salary_bp.route('/api/salary/worker/<int:worker_id>', methods=['DELETE'])
 def delete_worker(worker_id):
-    """Delete a worker and all their attendance and salary records."""
-    salary_records = Salary.query.filter_by(worker_id=worker_id).all()
-    attendance_records = Attendance.query.filter_by(worker_id=worker_id).all()
-    worker = Worker.query.get(worker_id)
+    """Archive a worker, keeping every attendance and salary record they have.
 
-    if not salary_records and not attendance_records and worker is None:
+    This used to cascade-destroy the worker's whole history, so one mis-click
+    permanently erased months of paid work with nothing to restore from. It now
+    clears `Worker.active` instead — the soft-delete flag the model was given
+    for exactly this ("wage history should not be destroyed outright").
+
+    Nothing else needs to change for the worker to disappear from the UI:
+    `/api/labours` already filters on `active`, and that endpoint feeds both the
+    attendance-marking lists and the Worker Pay tab. The salary summary and the
+    exported reports read the `salary` table directly, so the months a worker
+    was genuinely paid still show up there — which is the correct payroll
+    behaviour for someone who has left. Reversible via
+    POST /api/salary/worker/<id>/restore.
+
+    The one case still removed outright is a worker with NO attendance and NO
+    salary rows — a name typed by mistake. There is no history to protect, so
+    dropping the row keeps the roster clean.
+    """
+    worker = Worker.query.get(worker_id)
+    if worker is None:
         return jsonify({'error': 'Worker not found'}), 404
 
-    salary_count = len(salary_records)
-    attendance_count = len(attendance_records)
+    salary_count = Salary.query.filter_by(worker_id=worker_id).count()
+    attendance_count = Attendance.query.filter_by(worker_id=worker_id).count()
 
-    # Delete children before the parent so the worker FK (RESTRICT) is satisfied.
-    for record in attendance_records:
-        db.session.delete(record)
-    for record in salary_records:
-        db.session.delete(record)
-    db.session.flush()
-    if worker is not None:
+    if not salary_count and not attendance_count:
         db.session.delete(worker)
+        db.session.commit()
+        return jsonify({
+            'message': f'Worker {worker_id} deleted (had no records to preserve)',
+            'worker_id': worker_id,
+            'mode': 'deleted',
+            'preserved_salary_records': 0,
+            'preserved_attendance_records': 0
+        })
 
+    worker.active = False
     db.session.commit()
 
     return jsonify({
-        'message': f'Worker {worker_id} deleted',
-        'deleted_salary_records': salary_count,
-        'deleted_attendance_records': attendance_count
+        'message': (f'Worker {worker_id} archived — {attendance_count} attendance '
+                    f'and {salary_count} salary record(s) preserved'),
+        'worker_id': worker_id,
+        'mode': 'archived',
+        'preserved_salary_records': salary_count,
+        'preserved_attendance_records': attendance_count
     })
+
+
+@salary_bp.route('/api/salary/worker/<int:worker_id>/restore', methods=['POST'])
+def restore_worker(worker_id):
+    """Undo an archive — put the worker back on the active roster.
+
+    Their attendance and salary rows were never touched, so restoring is just
+    the flag flip; the worker reappears in Worker Pay and in the attendance
+    lists with their history already intact.
+    """
+    worker = Worker.query.get(worker_id)
+    if worker is None:
+        return jsonify({'error': 'Worker not found'}), 404
+
+    was_archived = not worker.active
+    worker.active = True
+    db.session.commit()
+
+    return jsonify({
+        'message': (f'Worker {worker_id} restored' if was_archived
+                    else f'Worker {worker_id} was already active'),
+        'worker_id': worker_id,
+        'restored': was_archived,
+        'worker': worker.to_dict()
+    })
+
+
+@salary_bp.route('/api/salary/workers/archived', methods=['GET'])
+def list_archived_workers():
+    """Every archived worker, with the record counts held for each.
+
+    This is the undo list: what a delete took off the roster, and how much
+    history is waiting behind each name.
+    """
+    workers = Worker.query.filter_by(active=False).order_by(Worker.name).all()
+
+    out = []
+    for worker in workers:
+        row = worker.to_dict()
+        row['salary_records'] = Salary.query.filter_by(worker_id=worker.id).count()
+        row['attendance_records'] = Attendance.query.filter_by(worker_id=worker.id).count()
+        out.append(row)
+
+    return jsonify(out)
 
 
 # --- Report styling palette (shared across every sheet) -------------------
