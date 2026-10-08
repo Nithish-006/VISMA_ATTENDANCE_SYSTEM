@@ -5,7 +5,9 @@
 {% block content %}
 <div class="page-container">
     <header class="page-header">
-        <div class="header-content header-three-col">
+        <!-- salary-header: on phones Back + the tab's action share the top row
+             and the tabs get their own row (see SALARY PAGE — MOBILE LAYOUT). -->
+        <div class="header-content header-three-col salary-header">
             <!-- Left: Back button -->
             <div class="header-left">
                 <a href="{{ url_for('index') }}" class="back-btn">
@@ -27,7 +29,7 @@
             <!-- Right: Per-tab controls -->
             <div class="header-right">
                 <div id="summaryControls" class="control-group">
-                    <button id="exportBtn" class="btn" style="background-color: #22c55e; color: black; font-family: var(--font-sans); font-weight: 700;">
+                    <button id="exportBtn" class="btn btn-export">
                         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                             <polyline points="7 10 12 15 17 10"/>
@@ -60,42 +62,61 @@
             <div id="panelSummary" class="panel active">
                 <main class="main-content">
                     <div class="salary-summary-section">
-                        <div class="summary-filters">
-                            <div class="filter-group">
-                                <label>From</label>
-                                <input type="date" id="salaryStartDate" class="date-input">
+                        <!-- On phones the dates stay visible and the four
+                             pickers fold behind the Filters toggle. The wrappers
+                             are display: contents on desktop, so the wide filter
+                             row is unchanged there. -->
+                        <div id="salaryFilters" class="summary-filters salary-filters">
+                            <div class="filter-primary">
+                                <div class="filter-group">
+                                    <label>From</label>
+                                    <input type="date" id="salaryStartDate" class="date-input">
+                                </div>
+                                <div class="filter-group">
+                                    <label>To</label>
+                                    <input type="date" id="salaryEndDate" class="date-input">
+                                </div>
                             </div>
-                            <div class="filter-group">
-                                <label>To</label>
-                                <input type="date" id="salaryEndDate" class="date-input">
-                            </div>
-                            <div class="filter-group">
-                                <label>Project</label>
-                                <select id="salaryProject" class="select-input">
-                                    <option value="">All Projects</option>
-                                </select>
-                            </div>
-                            <div class="filter-group">
-                                <label>Supervisor</label>
-                                <select id="salarySupervisor" class="select-input">
-                                    <option value="">All Supervisors</option>
-                                </select>
-                            </div>
-                            <div class="filter-group">
-                                <label>Team</label>
-                                <select id="salaryTeam" class="select-input">
-                                    <option value="">All Teams</option>
-                                </select>
-                            </div>
-                            <div class="filter-group">
-                                <label>Labour</label>
-                                <select id="salaryWorker" class="select-input">
-                                    <option value="">All Labours</option>
-                                </select>
+                            <div class="filter-more">
+                                <div class="filter-group">
+                                    <label>Project</label>
+                                    <select id="salaryProject" class="select-input">
+                                        <option value="">All Projects</option>
+                                    </select>
+                                </div>
+                                <div class="filter-group">
+                                    <label>Supervisor</label>
+                                    <select id="salarySupervisor" class="select-input">
+                                        <option value="">All Supervisors</option>
+                                    </select>
+                                </div>
+                                <div class="filter-group">
+                                    <label>Team</label>
+                                    <select id="salaryTeam" class="select-input">
+                                        <option value="">All Teams</option>
+                                    </select>
+                                </div>
+                                <div class="filter-group">
+                                    <label>Labour</label>
+                                    <select id="salaryWorker" class="select-input">
+                                        <option value="">All Labours</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="filter-action">
+                                <button type="button" class="btn btn-secondary filters-toggle" aria-expanded="false" aria-controls="salaryFilters" onclick="toggleFilterPanel('salaryFilters')">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <line x1="4" y1="6" x2="20" y2="6"/>
+                                        <line x1="7" y1="12" x2="17" y2="12"/>
+                                        <line x1="10" y1="18" x2="14" y2="18"/>
+                                    </svg>
+                                    Filters
+                                    <span class="filter-count" hidden></span>
+                                </button>
                                 <button class="btn btn-secondary" onclick="resetSalaryFilters()">Reset</button>
                             </div>
+                            <!-- Phones: what the folded pickers are filtering by, one tap to clear each -->
+                            <div class="active-filters"></div>
                         </div>
                         <div id="monthPillsBar" class="month-filter-bar"></div>
                         <div id="salarySummaryDashboard" class="summary-dashboard">
@@ -111,34 +132,48 @@
                          list below it. Status defaults to Active; archived
                          workers are reachable here or via the hint under the
                          table, so a removed worker is never a dead end. -->
-                    <div class="summary-filters worker-filters">
-                        <div class="filter-group filter-grow">
-                            <label>Name</label>
-                            <input type="text" id="workerSearch" class="text-input" placeholder="Search worker name..." autocomplete="off" oninput="renderWorkerEditor()">
+                    <div id="workerFilters" class="summary-filters worker-filters">
+                        <div class="filter-primary">
+                            <div class="filter-group filter-grow">
+                                <label>Name</label>
+                                <input type="text" id="workerSearch" class="text-input" placeholder="Search worker name..." autocomplete="off" oninput="renderWorkerEditor()">
+                            </div>
                         </div>
-                        <div class="filter-group">
-                            <label>Designation</label>
-                            <select id="workerDesignationFilter" class="select-input" onchange="renderWorkerEditor()">
-                                <option value="">All Designations</option>
-                            </select>
-                        </div>
-                        <div class="filter-group">
-                            <label>Team</label>
-                            <select id="workerTeamFilter" class="select-input" onchange="renderWorkerEditor()">
-                                <option value="">All Teams</option>
-                            </select>
-                        </div>
-                        <div class="filter-group">
-                            <label>Status</label>
-                            <select id="workerStatusFilter" class="select-input" onchange="renderWorkerEditor()">
-                                <option value="active">Active</option>
-                                <option value="archived">Archived</option>
-                                <option value="all">All</option>
-                            </select>
+                        <div class="filter-more">
+                            <div class="filter-group">
+                                <label>Designation</label>
+                                <select id="workerDesignationFilter" class="select-input" onchange="renderWorkerEditor()">
+                                    <option value="">All Designations</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Team</label>
+                                <select id="workerTeamFilter" class="select-input" onchange="renderWorkerEditor()">
+                                    <option value="">All Teams</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Status</label>
+                                <select id="workerStatusFilter" class="select-input" onchange="renderWorkerEditor()">
+                                    <option value="active">Active</option>
+                                    <option value="archived">Archived</option>
+                                    <option value="all">All</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="filter-action">
+                            <button type="button" class="btn btn-secondary filters-toggle" aria-expanded="false" aria-controls="workerFilters" onclick="toggleFilterPanel('workerFilters')">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <line x1="4" y1="6" x2="20" y2="6"/>
+                                    <line x1="7" y1="12" x2="17" y2="12"/>
+                                    <line x1="10" y1="18" x2="14" y2="18"/>
+                                </svg>
+                                Filters
+                                <span class="filter-count" hidden></span>
+                            </button>
                             <button class="btn btn-secondary" onclick="resetWorkerFilters()">Reset</button>
                         </div>
+                        <div class="active-filters"></div>
                     </div>
                     <div id="workerEditorContainer">
                         <div class="empty-state">Loading worker details...</div>

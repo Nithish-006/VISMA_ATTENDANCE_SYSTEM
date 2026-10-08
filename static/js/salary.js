@@ -106,6 +106,9 @@ function renderMonthPills() {
     bar.innerHTML = pills.map(p =>
         `<button class="filter-pill" data-key="${p.key}" data-year="${p.year}" data-month="${p.monthNum}">${p.label}</button>`
     ).join('');
+    // On phones the pills are one scrolling row; start it at the newest month
+    // (a no-op on desktop, where the row wraps instead of scrolling).
+    bar.scrollLeft = bar.scrollWidth;
 
     bar.querySelectorAll('.filter-pill').forEach(btn => {
         btn.addEventListener('click', function() {
@@ -224,6 +227,68 @@ function resetSalaryFilters() {
     loadSalarySummary();
 }
 
+// ============================================
+// FOLDED FILTERS (phones)
+// ============================================
+
+// The pickers each filter card folds behind its "Filters" button on phones,
+// mapped to the value that means "not filtering". The dates and the name
+// search always stay visible, so they aren't listed. On desktop the button
+// and chips are hidden and these pickers sit in the row as before.
+const FOLDED_FILTERS = {
+    salaryFilters: { salaryProject: '', salarySupervisor: '', salaryTeam: '', salaryWorker: '' },
+    workerFilters: { workerDesignationFilter: '', workerTeamFilter: '', workerStatusFilter: 'active' }
+};
+
+function toggleFilterPanel(cardId) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const open = card.classList.toggle('filters-open');
+    const btn = card.querySelector('.filters-toggle');
+    if (btn) btn.setAttribute('aria-expanded', String(open));
+}
+
+// Badge the Filters button with how many folded pickers are in use and list
+// them as chips under it, so a collapsed panel never hides what the figures
+// are filtered by — and each one clears with a single tap.
+function syncFilterSummary(cardId) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+
+    const active = Object.entries(FOLDED_FILTERS[cardId])
+        .map(([id, neutral]) => ({ sel: document.getElementById(id), neutral }))
+        .filter(f => f.sel && f.sel.value !== f.neutral);
+
+    const badge = card.querySelector('.filter-count');
+    if (badge) {
+        badge.textContent = active.length;
+        badge.hidden = active.length === 0;
+    }
+
+    const chips = card.querySelector('.active-filters');
+    if (!chips) return;
+    chips.innerHTML = active.map(({ sel }) => {
+        const labelEl = sel.closest('.filter-group')?.querySelector('label');
+        const label = labelEl ? labelEl.textContent : '';
+        const opt = sel.options[sel.selectedIndex];
+        const text = opt ? opt.textContent : sel.value;
+        return `<button type="button" class="active-filter-chip" onclick="clearFoldedFilter('${cardId}', '${sel.id}')" aria-label="Clear ${escapeHtml(label)} filter">
+                    <span class="afc-label">${escapeHtml(label)}</span>
+                    <span class="afc-value">${escapeHtml(text)}</span>
+                    <span class="afc-x" aria-hidden="true">&times;</span>
+                </button>`;
+    }).join('');
+}
+
+// Chip tap: put the picker back to "not filtering" and fire its normal change
+// handler, so the view reloads exactly as if it had been picked by hand.
+function clearFoldedFilter(cardId, selectId) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    sel.value = FOLDED_FILTERS[cardId][selectId];
+    sel.dispatchEvent(new Event('change'));
+}
+
 async function loadSalarySummary() {
     const startDate = document.getElementById('salaryStartDate').value;
     const endDate = document.getElementById('salaryEndDate').value;
@@ -232,6 +297,8 @@ async function loadSalarySummary() {
     const supervisorId = document.getElementById('salarySupervisor').value;
     const team = document.getElementById('salaryTeam').value;
     const dashboard = document.getElementById('salarySummaryDashboard');
+
+    syncFilterSummary('salaryFilters');
 
     if (!startDate || !endDate) {
         dashboard.innerHTML = '<div class="empty-state">Please select both start and end dates.</div>';
@@ -288,8 +355,12 @@ async function loadSalarySummary() {
             </div>
         `;
 
+        // Each section keeps its title and content together in a .summary-section
+        // (display: contents on desktop, so the dashboard's spacing is unchanged).
+
         // Project breakdown
         if (data.projects.length > 0) {
+            html += `<div class="summary-section">`;
             html += `<div class="summary-section-title">Project Breakdown</div>`;
             html += `<div class="project-breakdown">`;
             data.projects.forEach(p => {
@@ -305,11 +376,14 @@ async function loadSalarySummary() {
                     </div>
                 `;
             });
-            html += `</div>`;
+            html += `</div></div>`;
         }
 
-        // Daily breakdown table
+        // Daily breakdown table — stays a real table on phones too, with the
+        // year dropped from the date (the range is always one month) and
+        // "OT Hours" shortened so all five columns fit.
         if (data.daily_breakdown.length > 0) {
+            html += `<div class="summary-section">`;
             html += `<div class="summary-section-title">Daily Breakdown</div>`;
             html += `
                 <div class="daily-breakdown-table-wrap">
@@ -320,13 +394,13 @@ async function loadSalarySummary() {
                                 <th class="right">Present</th>
                                 <th class="right">Absent</th>
                                 <th class="right">Holiday</th>
-                                <th class="right">OT Hours</th>
+                                <th class="right"><span class="label-full">OT Hours</span><span class="label-short">OT</span></th>
                             </tr>
                         </thead>
                         <tbody>
                             ${data.daily_breakdown.map(d => `
                                 <tr>
-                                    <td data-label="Date">${formatDate(d.date)}</td>
+                                    <td data-label="Date"><span class="label-full">${formatDate(d.date)}</span><span class="label-short">${formatDayMonth(d.date)}</span></td>
                                     <td class="right" data-label="Present"><span class="stat-badge-sm present">${d.present}</span></td>
                                     <td class="right" data-label="Absent"><span class="stat-badge-sm absent">${d.absent}</span></td>
                                     <td class="right" data-label="Holiday"><span class="stat-badge-sm holiday">${d.holiday}</span></td>
@@ -336,11 +410,13 @@ async function loadSalarySummary() {
                         </tbody>
                     </table>
                 </div>
-            `;
+            </div>`;
         }
 
-        // Worker summary table
+        // Worker summary table — on phones each row becomes a two-line card
+        // (name + salary, then the counts), keyed off the ws-* cell classes.
         if (data.workers.length > 0) {
+            html += `<div class="summary-section">`;
             html += `<div class="summary-section-title">Worker Summary</div>`;
             html += `
                 <div class="worker-summary-table-wrap">
@@ -358,18 +434,18 @@ async function loadSalarySummary() {
                         <tbody>
                             ${data.workers.map(w => `
                                 <tr class="worker-row" data-worker-id="${w.worker_id}" data-worker-name="${w.name}" style="cursor:pointer;">
-                                    <td class="worker-name" data-label="Name">${w.name}</td>
-                                    <td class="right" data-label="Present"><span class="stat-badge-sm present">${w.present_days}</span></td>
-                                    <td class="right" data-label="Absent"><span class="stat-badge-sm absent">${w.absent_days}</span></td>
-                                    <td class="right" data-label="OT Hours">${w.ot_hours}</td>
-                                    <td class="right total-cell" data-label="Salary">${formatCurrency(w.salary || 0)}</td>
-                                    <td data-label="Projects">${w.projects.join(', ') || '-'}</td>
+                                    <td class="worker-name ws-name" data-label="Name">${w.name}</td>
+                                    <td class="right ws-stat" data-label="Present"><span class="stat-badge-sm present">${w.present_days}</span></td>
+                                    <td class="right ws-stat" data-label="Absent"><span class="stat-badge-sm absent">${w.absent_days}</span></td>
+                                    <td class="right ws-stat" data-label="OT Hours">${w.ot_hours}</td>
+                                    <td class="right total-cell ws-salary" data-label="Salary">${formatCurrency(w.salary || 0)}</td>
+                                    <td class="ws-projects" data-label="Projects">${w.projects.join(', ') || '-'}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
                     </table>
                 </div>
-            `;
+            </div>`;
         }
 
         dashboard.innerHTML = html;
@@ -395,6 +471,16 @@ function formatDate(dateStr) {
     const d = parseDate(dateStr);
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+}
+
+// "Sun, 19 Jul" — the phone daily table's date, short enough to leave room
+// for all four count columns.
+function formatDayMonth(dateStr) {
+    const d = parseDate(dateStr);
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
 }
 
 function formatCurrency(amount) {
@@ -757,6 +843,8 @@ function renderWorkerEditor() {
     const container = document.getElementById('workerEditorContainer');
     if (!container) return;
 
+    syncFilterSummary('workerFilters');
+
     const f = workerFilterValues();
     const labours = workerEditorData.active.filter(w => matchesWorkerFilters(w, f));
     const archived = workerEditorData.archived.filter(w => matchesWorkerFilters(w, f));
@@ -817,7 +905,7 @@ function renderActiveWorkerTable(labours) {
                             ${labours.map(l => `
                                 <tr data-worker-id="${l.worker_id}" id="editRow_${l.worker_id}">
                                     <td class="id-cell" data-label="ID">${l.worker_id}</td>
-                                    <td data-label="Name"><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" style="text-transform: uppercase;" oninput="this.value = this.value.toUpperCase(); markEditChanged(this)"></td>
+                                    <td class="edit-name-cell" data-label="Name"><input type="text" class="edit-input edit-name" value="${escapeHtml(l.name)}" data-original="${escapeHtml(l.name)}" style="text-transform: uppercase;" oninput="this.value = this.value.toUpperCase(); markEditChanged(this)"></td>
                                     <td data-label="Designation">
                                         <select class="edit-input edit-designation" data-original="${l.designation || ''}" onchange="markEditChanged(this)">
                                             <option value="">--</option>
@@ -880,12 +968,12 @@ function renderArchivedWorkerTable(archived) {
                             ${archived.map(w => `
                                 <tr data-worker-id="${w.worker_id}" id="archivedRow_${w.worker_id}">
                                     <td class="id-cell" data-label="ID">${w.worker_id}</td>
-                                    <td data-label="Name">${escapeHtml(w.name)}</td>
+                                    <td class="edit-name-cell" data-label="Name">${escapeHtml(w.name)}</td>
                                     <td data-label="Designation">${escapeHtml(w.designation || '—')}</td>
                                     <td data-label="Team">${escapeHtml(w.team || '—')}</td>
                                     <td data-label="Base Pay/Day">${w.base_salary_per_day ? Number(w.base_salary_per_day).toLocaleString('en-IN') : '—'}</td>
                                     <td data-label="Pay Type">${w.monthly_salaried ? 'Monthly' : 'Daily'}</td>
-                                    <td data-label="Records Held">${w.attendance_records} attendance · ${w.salary_records} salary</td>
+                                    <td class="records-cell" data-label="Records Held">${w.attendance_records} attendance · ${w.salary_records} salary</td>
                                     <td class="edit-actions-cell" style="white-space: nowrap;">
                                         <button class="edit-restore-btn" onclick="restoreWorker(${w.worker_id}, '${escapeHtml(w.name)}')">Restore</button>
                                         <span class="edit-status" id="restoreStatus_${w.worker_id}"></span>

@@ -4016,86 +4016,8 @@ select.edit-input {
         max-width: 100%;
     }
 
-    /* --- Read-only tables become stacked cards --- */
-    .worker-summary-table-wrap,
-    .daily-breakdown-table-wrap {
-        overflow-x: visible;
-        border: none;
-        background: transparent;
-    }
-
-    .worker-summary-table,
-    .daily-breakdown-table {
-        border-collapse: separate;
-        border-spacing: 0;
-    }
-
-    .worker-summary-table thead,
-    .daily-breakdown-table thead {
-        display: none;
-    }
-
-    .worker-summary-table tr,
-    .daily-breakdown-table tr {
-        display: block;
-        background: var(--bg-primary);
-        border: 1px solid var(--border-light);
-        border-radius: var(--radius-md);
-        box-shadow: var(--shadow-sm);
-        overflow: hidden;
-        margin-bottom: 12px;
-    }
-
-    .worker-summary-table tr:hover td,
-    .daily-breakdown-table tr:hover td {
-        background: transparent;
-    }
-
-    .worker-summary-table td,
-    .daily-breakdown-table td {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        text-align: right;
-        padding: 10px 14px;
-        border-bottom: 1px solid var(--border-light);
-        white-space: normal;
-    }
-
-    .worker-summary-table tr td:last-child,
-    .daily-breakdown-table tr td:last-child {
-        border-bottom: none;
-    }
-
-    /* The data-label drives the row caption on the left */
-    .worker-summary-table td::before,
-    .daily-breakdown-table td::before {
-        content: attr(data-label);
-        flex-shrink: 0;
-        font-weight: 700;
-        font-size: 0.6875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: var(--text-tertiary);
-        text-align: left;
-    }
-
-    /* First cell acts as a card title bar */
-    .worker-summary-table td:first-child,
-    .daily-breakdown-table td:first-child {
-        justify-content: flex-start;
-        text-align: left;
-        font-weight: 700;
-        font-size: 0.9375rem;
-        color: var(--text-primary);
-        background: var(--gradient-subtle);
-    }
-
-    .worker-summary-table td:first-child::before,
-    .daily-breakdown-table td:first-child::before {
-        display: none;
-    }
+    /* The salary summary tables (daily breakdown, worker summary) get their
+       phone layout in SALARY PAGE — MOBILE LAYOUT at the end of this file. */
 
     /* --- Edit table becomes a stacked form card --- */
     .edit-table-wrap {
@@ -4340,5 +4262,619 @@ select.edit-input {
 
     .cs-search {
         height: 40px;
+    }
+}
+
+/* ============================================================
+   SALARY PAGE — MOBILE LAYOUT
+   ------------------------------------------------------------
+   On a phone the salary page should open on the numbers, not on
+   a wall of form fields, and every control should be one obvious
+   tap away:
+
+     header   Back and the tab's action (Export / Add Worker) share
+              the top row; the Summary | Pay tabs sit under them
+     filters  month pills scroll in one row; the dates (or the name
+              search) stay visible; the other pickers fold behind a
+              "Filters" button that shows how many are active, and
+              each active one shows as a chip you tap to clear
+     summary  total salary up top, then a compact stat row, project
+              rows, a one-line-per-day table and a two-line card
+              per worker (tap for attendance history)
+     pay      one two-column edit card per worker, no card-in-card
+
+   The wrappers this adds (.filter-primary, .filter-more,
+   .summary-section) are display: contents above 768px, and the
+   phone-only controls are hidden there, so desktop is unchanged.
+   ============================================================ */
+
+.filter-primary,
+.filter-more,
+.summary-section {
+    display: contents;
+}
+
+.filters-toggle,
+.active-filters,
+.label-short {
+    display: none;
+}
+
+.btn-export {
+    background-color: #22c55e;
+    color: black;
+    font-weight: 700;
+}
+
+@media (max-width: 768px) {
+    /* --- Header: [← Back ........ Action] over [ Summary | Pay ] --- */
+    .salary-header.header-three-col {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        grid-template-areas:
+            "back action"
+            "tabs tabs";
+        align-items: center;
+        gap: 10px 8px;
+        padding: 10px 0 12px;
+    }
+
+    .salary-header .header-left {
+        grid-area: back;
+        align-self: center;
+    }
+
+    /* Line the arrow up with the content's left edge */
+    .salary-header .header-left .back-btn {
+        margin-left: -10px;
+    }
+
+    .salary-header .header-center {
+        grid-area: tabs;
+    }
+
+    .salary-header .header-right {
+        grid-area: action;
+        width: auto;
+        justify-self: end;
+    }
+
+    .salary-header .control-group {
+        width: auto;
+    }
+
+    .salary-header .control-group .btn {
+        width: auto;
+        height: 40px;
+        padding: 0 14px;
+        gap: 6px;
+        font-size: 0.875rem;
+    }
+
+    .salary-header .control-group .btn svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* --- Month pills: one swipeable row above the filters --- */
+    .salary-summary-section {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .salary-summary-section .month-filter-bar {
+        order: -1;
+        flex-wrap: nowrap;
+        gap: 8px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+        /* Bleed to the screen edges so the row visibly scrolls */
+        margin: 0 -14px 12px;
+        padding: 2px 14px;
+    }
+
+    .salary-summary-section .month-filter-bar:empty {
+        display: none;
+    }
+
+    .salary-summary-section .month-filter-bar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .month-filter-bar .filter-pill {
+        flex-shrink: 0;
+        height: 36px;
+        padding: 0 16px;
+        font-size: 0.8125rem;
+    }
+
+    /* --- Filter card: essentials stay out, the rest folds away ---
+       Grid order: dates/search, then [Filters][Reset], then either the
+       open pickers or the active-filter chips. */
+    .salary-filters,
+    .worker-filters {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        padding: 14px;
+        border-radius: var(--radius-lg);
+        margin-bottom: 16px;
+    }
+
+    .worker-filters .filter-grow {
+        grid-column: 1 / -1;
+    }
+
+    /* Grid children must be allowed to shrink below their content */
+    .summary-filters .filter-group {
+        min-width: 0;
+        gap: 4px;
+    }
+
+    .summary-filters .filter-group .select-input,
+    .summary-filters .filter-group .date-input {
+        display: block;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .summary-filters .filter-group .cs-trigger.select-input {
+        display: inline-flex;
+    }
+
+    /* iOS centres date text; keep it flush with the other fields */
+    .summary-filters .date-input::-webkit-date-and-time-value {
+        text-align: left;
+    }
+
+    .summary-filters .filter-action {
+        grid-column: 1 / -1;
+        order: 1;
+        margin-top: 0;
+    }
+
+    .summary-filters .filter-more {
+        display: none;
+        grid-column: 1 / -1;
+        order: 2;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border-light);
+    }
+
+    .summary-filters.filters-open .filter-more {
+        display: grid;
+    }
+
+    .filters-toggle {
+        display: inline-flex;
+    }
+
+    .filters-toggle[aria-expanded="true"] {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--accent-light);
+    }
+
+    /* Touch screens keep :hover after a tap, which left a closed Filters
+       button looking open — only the expanded state should be highlighted. */
+    @media (hover: none) {
+        .summary-filters .filter-action .btn-secondary:hover:not([aria-expanded="true"]) {
+            border-color: var(--border-light);
+            color: var(--text-primary);
+            background: var(--bg-primary);
+        }
+    }
+
+    .filter-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 0.75rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    .filter-count[hidden] {
+        display: none;
+    }
+
+    .active-filters {
+        grid-column: 1 / -1;
+        order: 3;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    /* Open pickers already show their values — no need to repeat them */
+    .active-filters:empty,
+    .filters-open .active-filters {
+        display: none;
+    }
+
+    .active-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 100%;
+        min-height: 34px;
+        padding: 4px 5px 4px 12px;
+        border: 1px solid var(--accent);
+        border-radius: 999px;
+        background: var(--accent-light);
+        color: var(--text-primary);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .afc-label {
+        flex-shrink: 0;
+        font-size: 0.625rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--accent-hover);
+    }
+
+    .afc-value {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .afc-x {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #fff;
+        font-size: 1rem;
+        line-height: 1;
+    }
+
+    /* --- Dashboard: each title sits with its own content --- */
+    .summary-dashboard {
+        gap: 20px;
+    }
+
+    .summary-section {
+        display: block;
+    }
+
+    .summary-section-title {
+        margin-bottom: 10px;
+    }
+
+    /* Total salary is the headline; the three counts share one row */
+    .summary-stat-cards {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .summary-stat-card {
+        padding: 10px 8px 10px 12px;
+        border-radius: var(--radius-md);
+    }
+
+    .summary-stat-card.stat-success {
+        grid-column: 1 / -1;
+        order: -1;
+        padding: 14px 16px;
+    }
+
+    /* Tighter tracking so "Working Days" fits a third of a phone */
+    .summary-stat-label {
+        margin-bottom: 2px;
+        font-size: 0.625rem;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .summary-stat-value {
+        font-size: 1.25rem;
+        line-height: 1.3;
+    }
+
+    .summary-stat-card.stat-success .summary-stat-value {
+        font-size: 1.75rem;
+    }
+
+    /* Project rows: figures over their labels, labour cost on the right */
+    .project-breakdown {
+        gap: 8px;
+    }
+
+    .project-breakdown-card {
+        padding: 12px 14px;
+    }
+
+    .project-breakdown-name {
+        margin-bottom: 8px;
+        font-size: 0.875rem;
+        line-height: 1.35;
+    }
+
+    .project-breakdown-stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.5fr);
+        gap: 8px;
+    }
+
+    .pb-stat {
+        display: flex;
+        flex-direction: column;
+        font-size: 0.6875rem;
+        line-height: 1.3;
+        color: var(--text-tertiary);
+    }
+
+    .pb-stat strong {
+        font-size: 0.9375rem;
+    }
+
+    .pb-stat.stat-success {
+        align-items: flex-end;
+        text-align: right;
+    }
+
+    /* Daily breakdown: a real table, one line per day */
+    .label-full {
+        display: none;
+    }
+
+    .label-short {
+        display: inline;
+    }
+
+    .daily-breakdown-table th,
+    .daily-breakdown-table td {
+        padding: 9px 8px;
+        font-size: 0.8125rem;
+        white-space: nowrap;
+    }
+
+    .daily-breakdown-table th {
+        font-size: 0.625rem;
+        letter-spacing: 0.04em;
+    }
+
+    .daily-breakdown-table th:first-child,
+    .daily-breakdown-table td:first-child {
+        padding-left: 12px;
+    }
+
+    .daily-breakdown-table th:last-child,
+    .daily-breakdown-table td:last-child {
+        padding-right: 12px;
+    }
+
+    .daily-breakdown-table .stat-badge-sm {
+        min-width: 26px;
+        padding: 1px 6px;
+        text-align: center;
+    }
+
+    /* Worker summary: a two-line card per worker —
+         NAME .................. ₹ salary ›
+         PRESENT 1  ABSENT 0  OT HOURS 0
+         projects                                */
+    .worker-summary-table-wrap {
+        overflow: visible;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+    }
+
+    .worker-summary-table,
+    .worker-summary-table tbody {
+        display: block;
+    }
+
+    .worker-summary-table thead {
+        display: none;
+    }
+
+    .worker-summary-table tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 8px;
+        padding: 12px 14px;
+        margin-bottom: 8px;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-sm);
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .worker-summary-table tr:active {
+        background: var(--accent-light);
+    }
+
+    .worker-summary-table td,
+    .worker-summary-table tr:hover td {
+        padding: 0;
+        border: none;
+        background: none;
+        font-size: 0.8125rem;
+    }
+
+    /* Name + salary are sized to fill line one, so the counts wrap below */
+    .worker-summary-table td.ws-name {
+        order: 0;
+        flex: 0 0 calc(100% - 120px);
+        min-width: 0;
+        margin: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.9375rem;
+        font-weight: 700;
+    }
+
+    .worker-summary-table td.ws-salary {
+        order: 1;
+        flex: 0 0 112px;
+        text-align: right;
+        font-size: 0.9375rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    /* Says "tap me" — the row opens the worker's attendance history */
+    .worker-summary-table td.ws-salary::after {
+        content: '\203A';
+        margin-left: 6px;
+        font-weight: 600;
+        color: var(--text-tertiary);
+    }
+
+    .worker-summary-table td.ws-stat {
+        order: 2;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-right: 6px;
+        text-align: left;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .worker-summary-table td.ws-stat::before {
+        content: attr(data-label);
+        font-size: 0.625rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-tertiary);
+    }
+
+    .worker-summary-table td.ws-projects {
+        order: 3;
+        flex: 0 0 100%;
+        font-size: 0.75rem;
+        line-height: 1.4;
+        color: var(--text-secondary);
+    }
+
+    /* --- Worker Pay: one two-column edit card per worker --- */
+
+    /* Each row is already a card; the section frame around them made it a
+       card inside a card */
+    .edit-section,
+    .edit-section-archived {
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        overflow: visible;
+    }
+
+    .edit-title {
+        padding: 0 2px 10px;
+        background: none;
+        border-bottom: none;
+    }
+
+    .edit-title .count {
+        background: var(--bg-tertiary);
+    }
+
+    .archived-note {
+        padding: 0 2px 12px;
+    }
+
+    .edit-table,
+    .edit-table tbody {
+        display: block;
+    }
+
+    .edit-table tr {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px 10px;
+        padding: 14px;
+        margin-bottom: 10px;
+    }
+
+    .edit-section-archived .edit-table tr {
+        border-style: dashed;
+    }
+
+    .edit-table td {
+        min-width: 0;
+        padding: 0;
+    }
+
+    .edit-table td::before {
+        margin-bottom: 4px;
+    }
+
+    .edit-table td.edit-name-cell,
+    .edit-table td.records-cell,
+    .edit-table td.edit-actions-cell {
+        grid-column: 1 / -1;
+    }
+
+    /* Worker ID tucks into the top-right corner, level with the Name label */
+    .edit-table td.id-cell {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        padding: 0;
+        font-size: 0.75rem;
+        line-height: 1.6;
+    }
+
+    .edit-table td.id-cell::before {
+        content: 'ID';
+        display: inline;
+        margin: 0 4px 0 0;
+    }
+
+    /* Daily / Monthly fills its half and matches the 44px fields beside it */
+    .pay-type-toggle {
+        display: flex;
+        width: 100%;
+        height: 44px;
+    }
+
+    .pay-type-opt {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 0 4px;
+    }
+
+    .edit-table td.edit-actions-cell {
+        margin-top: 2px;
+        padding-top: 12px;
+    }
+
+    .edit-save-btn,
+    .edit-delete-btn,
+    .edit-restore-btn {
+        flex: 1;
+        height: 44px;
+        justify-content: center;
+        margin-left: 0;
     }
 }
