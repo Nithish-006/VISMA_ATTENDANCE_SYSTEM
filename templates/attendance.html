@@ -628,7 +628,7 @@ async function showHistory(workerId) {
                                 ${month.records.map(a => {
                                     const day = parseDate(a.date).getDate();
                                     return `
-                                        <div class="day-cell ${a.status.toLowerCase()}" title="${a.date}${a.project ? ' - ' + a.project : ''}">
+                                        <div class="day-cell ${a.status.toLowerCase()}" title="${formatDMY(a.date)}${a.project ? ' - ' + a.project : ''}">
                                             <span class="day-num">${day}</span>
                                             <span class="day-status">${a.status}</span>
                                             ${a.ot_hours > 0 ? `<span class="day-ot">+${a.ot_hours}</span>` : ''}

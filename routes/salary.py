@@ -723,7 +723,7 @@ def export_salary_report():
             ps['cost'] += rate + day_ot_pay
 
     # --- Period / filter banner shared by every sheet ---
-    period_text = f"Period: {start_date.strftime('%d %b %Y')} – {end_date.strftime('%d %b %Y')}"
+    period_text = f"Period: {start_date.strftime('%d-%m-%Y')} – {end_date.strftime('%d-%m-%Y')}"
     filt = []
     if team:
         filt.append(f"Team: {team}")
@@ -755,7 +755,7 @@ def export_salary_report():
     wb.save(buffer)
     buffer.seek(0)
 
-    parts = ['salary_report', start_date.isoformat(), 'to', end_date.isoformat()]
+    parts = ['salary_report', start_date.strftime('%d-%m-%Y'), 'to', end_date.strftime('%d-%m-%Y')]
     if team:
         parts.append(team.replace(' ', '_'))
     if project:
@@ -897,7 +897,7 @@ def _build_daily_attendance(wb, att_records, label, team_of, period_text, filter
         day_name = calendar.day_abbr[a.date.weekday()]
         ot = float(a.ot_hours) if a.ot_hours else 0
         values = [
-            a.date.strftime('%d/%m/%Y'), day_name, label(a.worker_id),
+            a.date.strftime('%d-%m-%Y'), day_name, label(a.worker_id),
             team_of(a.worker_id), a.status or '', (ot if ot else ''),
             a.project or '-', a.work or '-',
         ]
@@ -945,7 +945,7 @@ def _build_daily_project_summary(wb, daily, projects, period_text, filter_text):
 
     for d in sorted(daily):
         ds = daily[d]
-        values = [d.strftime('%d/%m/%Y'), calendar.day_abbr[d.weekday()],
+        values = [d.strftime('%d-%m-%Y'), calendar.day_abbr[d.weekday()],
                   ds['present'], ds['absent'], ds['holiday'], round(ds['ot'], 2)]
         for c, v in enumerate(values, start=1):
             cell = ws.cell(row=row, column=c, value=v)

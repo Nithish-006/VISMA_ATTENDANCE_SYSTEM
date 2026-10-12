@@ -19,6 +19,9 @@
 </head>
 <body>
     {% block content %}{% endblock %}
+    <!-- Shows every date as DD-MM-YYYY (incl. date inputs). Loaded before the
+         page scripts so the inputs are upgraded before anything sets them. -->
+    <script src="{{ url_for('static', filename='js/date-format.js') }}"></script>
     {% block scripts %}{% endblock %}
     <!-- Inline themed dropdowns: replaces the OS-native <select> picker
          (which opens as a separate modal on mobile) on every page. -->

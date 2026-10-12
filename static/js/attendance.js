@@ -87,10 +87,9 @@ function updateMarkDateLabel(offset) {
     const d = istNow();
     d.setDate(d.getDate() - offset);
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const prefix = offset === 0 ? 'Today' : 'Yesterday';
     const label = document.getElementById('markDateLabel');
-    if (label) label.textContent = `${prefix} — ${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
+    if (label) label.textContent = `${prefix} — ${days[d.getDay()]}, ${formatDMY(isoForDaysAgo(offset))}`;
 }
 
 async function onMarkDayChange(btn) {
@@ -599,12 +598,9 @@ function currentSupervisorName() {
     return s ? s.name : '';
 }
 
-// "2026-06-22" -> "22 Jun 2026". Built from the literal Y-M-D so it never drifts
-// with the viewer's timezone (the rest of the app reckons dates in IST).
+// "2026-06-22" -> "22-06-2026", the app-wide display format.
 function formatShareDate(dateStr) {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${d} ${months[m - 1]} ${y}`;
+    return formatDMY(dateStr);
 }
 
 // Build the plain-text attendance report. *bold* markers render as bold in

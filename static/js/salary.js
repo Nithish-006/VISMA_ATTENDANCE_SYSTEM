@@ -470,17 +470,13 @@ async function loadSalarySummary() {
 function formatDate(dateStr) {
     const d = parseDate(dateStr);
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+    return `${days[d.getDay()]}, ${formatDMY(dateStr)}`;
 }
 
-// "Sun, 19 Jul" — the phone daily table's date, short enough to leave room
+// "19-07-2026" — the phone daily table's date, short enough to leave room
 // for all four count columns.
 function formatDayMonth(dateStr) {
-    const d = parseDate(dateStr);
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
+    return formatDMY(dateStr);
 }
 
 function formatCurrency(amount) {
@@ -550,7 +546,7 @@ async function exportExcel() {
         // Prefer the server-supplied filename, fall back to a sensible default.
         const disposition = response.headers.get('Content-Disposition') || '';
         const match = disposition.match(/filename="?([^"]+)"?/);
-        const rangeSuffix = startDate && endDate ? `_${startDate}_to_${endDate}` : `_${isoDate(istToday())}`;
+        const rangeSuffix = startDate && endDate ? `_${formatDMY(startDate)}_to_${formatDMY(endDate)}` : `_${formatDMY(isoDate(istToday()))}`;
         const projectSuffix = selectedProject ? `_${selectedProject.replace(/\s+/g, '_')}` : '';
         const fileName = match ? match[1] : `salary_report${rangeSuffix}${projectSuffix}.xlsx`;
 
@@ -661,7 +657,7 @@ async function showAttendanceHistory(workerId, year, month, workerName) {
                                 ${m.records.map(a => {
                                     const day = parseDate(a.date).getDate();
                                     return `
-                                        <div class="day-cell ${a.status.toLowerCase()}" title="${a.date}${a.project ? ' - ' + a.project : ''}">
+                                        <div class="day-cell ${a.status.toLowerCase()}" title="${formatDMY(a.date)}${a.project ? ' - ' + a.project : ''}">
                                             <span class="day-num">${day}</span>
                                             <span class="day-status">${a.status}</span>
                                             ${a.ot_hours > 0 ? `<span class="day-ot">+${a.ot_hours}</span>` : ''}
